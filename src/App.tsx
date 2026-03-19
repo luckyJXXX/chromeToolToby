@@ -130,6 +130,7 @@ function App() {
         onCollectionsChange={handleCollectionsChange}
         activeSpace={spaces.find(s => s.id === activeSpaceId)}
         allCollections={collections}
+        onTabDropped={() => refreshWindows()}
       />
 
       {/* 右侧边栏 - 当前打开的标签页 */}

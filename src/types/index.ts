@@ -27,6 +27,7 @@ export interface Card {
   title: string;
   favicon?: string;
   description?: string;
+  shortUrl?: string;
   tags?: string[];
   createdAt: number;
   updatedAt: number;

@@ -35,7 +35,11 @@ import {
   X,
   Folder,
   Link,
-  Link2
+  Link2,
+  Share,
+  Copy,
+  Check,
+  Unlink
 } from 'lucide-react';
 import { saveCollections } from '../utils/storage';
 
@@ -44,6 +48,7 @@ interface MainContentProps {
   onCollectionsChange: (collections: Collection[]) => void;
   activeSpace?: Space;
   allCollections: Collection[];
+  onTabDropped?: (tabId: number) => void;
 }
 
 // 可排序的 Collection 组件
@@ -151,6 +156,18 @@ function SortableCollection({
         <span className="text-xs text-dark-500">
           {collection.cards.length} 个链接
         </span>
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenAll(collection);
+          }}
+          className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-400 hover:bg-indigo-600/20 rounded transition-colors"
+          title="全部打开"
+        >
+          <ExternalLink size={12} />
+          打开
+        </button>
 
         <div className="relative">
           <button
@@ -262,6 +279,7 @@ function CardItem({
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+  const [copied, setCopied] = useState(false);
 
   // 拖拽功能
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -307,29 +325,70 @@ function CardItem({
       style={style}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
-      {...attributes}
-      {...listeners}
       className="flex items-center gap-2 p-2 bg-dark-800 hover:bg-dark-700 rounded-lg group cursor-pointer transition-colors"
     >
-      <div className="w-5 h-5 flex-shrink-0">
-        {card.favicon ? (
-          <img src={card.favicon} alt="" className="w-full h-full" />
-        ) : (
-          <div className="w-full h-full bg-dark-600 rounded flex items-center justify-center text-[10px] text-dark-300">
-            {card.title.charAt(0) || '?'}
-          </div>
-        )}
-      </div>
-      <span className="text-sm text-dark-300 truncate flex-1">{card.title}</span>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-dark-600 rounded text-dark-500 hover:text-red-400 transition-all"
+      {/* 拖拽手柄区域 */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="flex items-center gap-2 flex-1 min-w-0"
       >
-        <X size={12} />
-      </button>
+        <div className="w-5 h-5 flex-shrink-0">
+          {card.favicon ? (
+            <img src={card.favicon} alt="" className="w-full h-full" />
+          ) : (
+            <div className="w-full h-full bg-dark-600 rounded flex items-center justify-center text-[10px] text-dark-300">
+              {card.title.charAt(0) || '?'}
+            </div>
+          )}
+        </div>
+        <span className="text-sm text-dark-300 truncate flex-1">{card.title}</span>
+      </div>
+      {/* 操作按钮组 */}
+      <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-all">
+        {/* 复制按钮 */}
+        <button
+          onClick={async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            try {
+              await navigator.clipboard.writeText(card.url);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            } catch (err) {
+              console.error('复制失败:', err);
+            }
+          }}
+          className="p-1 hover:bg-dark-600 rounded text-dark-500 hover:text-indigo-400 transition-all"
+          title="复制链接"
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+        </button>
+        {/* 分享/编辑按钮 */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onEdit(card);
+          }}
+          className="p-1 hover:bg-dark-600 rounded text-dark-500 hover:text-indigo-400 transition-all"
+          title="编辑"
+        >
+          <Share size={12} />
+        </button>
+        {/* 删除按钮 */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onDelete();
+          }}
+          className="p-1 hover:bg-dark-600 rounded text-dark-500 hover:text-red-400 transition-all"
+          title="删除"
+        >
+          <X size={12} />
+        </button>
+      </div>
 
       {/* 右键菜单 */}
       {showMenu && (
@@ -451,20 +510,26 @@ function EditCardModal({
   isOpen,
   card,
   onClose,
-  onSave
+  onSave,
+  onDelete
 }: {
   isOpen: boolean;
   card: Card | null;
   onClose: () => void;
-  onSave: (url: string, title: string) => void;
+  onSave: (url: string, title: string, description?: string, shortUrl?: string) => void;
+  onDelete?: () => void;
 }) {
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [shortUrl, setShortUrl] = useState('');
 
   useEffect(() => {
     if (card) {
       setUrl(card.url);
       setTitle(card.title);
+      setDescription(card.description || '');
+      setShortUrl(card.shortUrl || '');
     }
   }, [card]);
 
@@ -473,17 +538,17 @@ function EditCardModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (url.trim()) {
-      onSave(url, title || url);
+      onSave(url, title || url, description, shortUrl);
       onClose();
     }
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-dark-800 rounded-xl p-6 w-96 border border-dark-700">
+      <div className="bg-dark-800 rounded-xl p-6 w-[420px] border border-dark-700">
         <h3 className="text-lg font-medium text-dark-100 mb-4">编辑链接</h3>
         <form onSubmit={handleSubmit}>
-          <div className="mb-4">
+          <div className="mb-3">
             <label className="block text-sm text-dark-400 mb-1">网址 *</label>
             <input
               type="url"
@@ -494,7 +559,7 @@ function EditCardModal({
               required
             />
           </div>
-          <div className="mb-4">
+          <div className="mb-3">
             <label className="block text-sm text-dark-400 mb-1">标题</label>
             <input
               type="text"
@@ -504,19 +569,51 @@ function EditCardModal({
               className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
+          <div className="mb-3">
+            <label className="block text-sm text-dark-400 mb-1">描述</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="输入描述（可选）"
+              rows={2}
+              className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500 resize-none"
+            />
+          </div>
+          <div className="mb-4">
+            <label className="block text-sm text-dark-400 mb-1">
+              <Link size={12} className="inline mr-1" />
+              自定义短链
+            </label>
+            <input
+              type="text"
+              value={shortUrl}
+              onChange={(e) => setShortUrl(e.target.value)}
+              placeholder="输入短链（可选）"
+              className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
           <div className="flex gap-2">
+            {onDelete && (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="px-4 py-2 bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/30"
+              >
+                DELETE
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
               className="flex-1 px-4 py-2 bg-dark-700 text-dark-300 rounded-lg hover:bg-dark-600"
             >
-              取消
+              CANCEL
             </button>
             <button
               type="submit"
               className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500"
             >
-              保存
+              DONE
             </button>
           </div>
         </form>
@@ -587,7 +684,8 @@ export default function MainContent({
   collections,
   onCollectionsChange,
   activeSpace,
-  allCollections
+  allCollections,
+  onTabDropped
 }: MainContentProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -650,10 +748,12 @@ export default function MainContent({
 
               onCollectionsChange(newCollections);
 
-              // 保留原标签页，不再关闭
-              // if (data.tabId) {
-              //   await chrome.tabs.remove(data.tabId);
-              // }
+              // 关闭原始标签页
+              if (data.tabId) {
+                await chrome.tabs.remove(data.tabId);
+                // 通知父组件刷新窗口列表
+                onTabDropped?.(data.tabId);
+              }
             }
           }
         }
@@ -669,7 +769,7 @@ export default function MainContent({
       document.removeEventListener('dragover', handleDragOver);
       document.removeEventListener('drop', handleDrop);
     };
-  }, [allCollections, onCollectionsChange]);
+  }, [allCollections, onCollectionsChange, onTabDropped]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -719,8 +819,12 @@ export default function MainContent({
 
         onCollectionsChange(newCollections);
 
-        // 关闭原始标签页（不再默认关闭，保留原页面）
-        // chrome.tabs.remove(tab.id);
+        // 关闭原始标签页
+        if (tab.id) {
+          chrome.tabs.remove(tab.id);
+          // 通知父组件刷新窗口列表
+          onTabDropped?.(tab.id);
+        }
 
         setActiveId(null);
         setOverId(null);
@@ -852,15 +956,39 @@ export default function MainContent({
     setEditingCard({ card, collectionId });
   };
 
-  const handleSaveEditedCard = (url: string, title: string) => {
+  const handleSaveEditedCard = (url: string, title: string, description?: string, shortUrl?: string) => {
     if (!editingCard) return;
 
     const { card, collectionId } = editingCard;
     const targetCollection = allCollections.find(c => c.id === collectionId);
     if (targetCollection) {
       const updatedCards = targetCollection.cards.map(c =>
-        c.id === card.id ? { ...c, url, title, updatedAt: Date.now() } : c
+        c.id === card.id ? { ...c, url, title, description, shortUrl, updatedAt: Date.now() } : c
       );
+
+      const updatedCollection = {
+        ...targetCollection,
+        cards: updatedCards,
+        updatedAt: Date.now()
+      };
+
+      const newCollections = allCollections.map(c =>
+        c.id === targetCollection.id ? updatedCollection : c
+      );
+
+      onCollectionsChange(newCollections);
+    }
+    setEditingCard(null);
+  };
+
+  // 删除编辑中的卡片
+  const handleDeleteEditingCard = () => {
+    if (!editingCard) return;
+
+    const { card, collectionId } = editingCard;
+    const targetCollection = allCollections.find(c => c.id === collectionId);
+    if (targetCollection) {
+      const updatedCards = targetCollection.cards.filter(c => c.id !== card.id);
 
       const updatedCollection = {
         ...targetCollection,
@@ -1015,6 +1143,7 @@ export default function MainContent({
         card={editingCard?.card || null}
         onClose={() => setEditingCard(null)}
         onSave={handleSaveEditedCard}
+        onDelete={handleDeleteEditingCard}
       />
 
       {/* 移动卡片弹窗 */}
