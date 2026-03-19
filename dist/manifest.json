@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Toby - 标签页管理器",
+  "version": "1.0.0",
+  "description": "可视化工作区，将标签页拖拽组织成结构化的卡片集合",
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "permissions": [
+    "tabs",
+    "storage",
+    "windows"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ]
+}

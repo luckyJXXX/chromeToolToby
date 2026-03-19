@@ -1,0 +1,74 @@
+{
+  "extension_name": {
+    "message": "Toby - 浏览器效率工具",
+    "description": "插件名称"
+  },
+  "extension_description": {
+    "message": "标签页管理、网页收藏、本地数据管理 - 让浏览器更高效",
+    "description": "插件描述"
+  },
+  "tab_tabs": {
+    "message": "标签页",
+    "description": "标签页标签"
+  },
+  "tab_favorites": {
+    "message": "收藏",
+    "description": "收藏标签"
+  },
+  "tab_history": {
+    "message": "历史",
+    "description": "历史记录标签"
+  },
+  "action_organize": {
+    "message": "整理",
+    "description": "整理标签页按钮"
+  },
+  "action_favorite_current": {
+    "message": "收藏当前",
+    "description": "收藏当前页面按钮"
+  },
+  "action_export": {
+    "message": "导出",
+    "description": "导出数据按钮"
+  },
+  "group_by_domain": {
+    "message": "按域名",
+    "description": "按域名分组选项"
+  },
+  "group_by_title": {
+    "message": "按标题",
+    "description": "按标题分组选项"
+  },
+  "empty_tabs": {
+    "message": "没有打开的标签页",
+    "description": "空标签页提示"
+  },
+  "empty_favorites": {
+    "message": "还没有收藏，快去添加吧",
+    "description": "空收藏提示"
+  },
+  "empty_history": {
+    "message": "暂无历史记录",
+    "description": "空历史记录提示"
+  },
+  "notification_added": {
+    "message": "已添加到收藏",
+    "description": "添加收藏成功提示"
+  },
+  "notification_exported": {
+    "message": "数据已导出",
+    "description": "导出成功提示"
+  },
+  "notification_imported": {
+    "message": "数据已导入",
+    "description": "导入成功提示"
+  },
+  "confirm_clear_history": {
+    "message": "确定要清空所有历史记录吗？",
+    "description": "清空历史确认"
+  },
+  "confirm_clear_all": {
+    "message": "确定要清空所有数据吗？此操作不可恢复！",
+    "description": "清空所有数据确认"
+  }
+}
