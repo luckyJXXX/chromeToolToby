@@ -12,7 +12,8 @@
   "permissions": [
     "tabs",
     "storage",
-    "windows"
+    "windows",
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
