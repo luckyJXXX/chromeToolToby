@@ -39,9 +39,14 @@ import {
   Share,
   Copy,
   Check,
-  Unlink
+  Unlink,
+  Sparkles,
+  Loader2,
+  Settings,
+  Key
 } from 'lucide-react';
 import { saveCollections } from '../utils/storage';
+import { getMiniMaxApiKey, setMiniMaxApiKey, analyzeContent, AIAnalysisResult } from '../utils/ai';
 
 interface MainContentProps {
   collections: Collection[];
@@ -60,6 +65,7 @@ function SortableCollection({
   onAddCard,
   onEditCard,
   onMoveCard,
+  onAICard,
   isOver
 }: {
   collection: Collection;
@@ -69,6 +75,7 @@ function SortableCollection({
   onAddCard: (collectionId: string) => void;
   onEditCard: (card: Card, collectionId: string) => void;
   onMoveCard: (card: Card, collectionId: string) => void;
+  onAICard?: (card: Card, collectionId: string) => void;
   isOver?: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -253,6 +260,7 @@ function SortableCollection({
                   }}
                   onEdit={(editedCard) => onEditCard(editedCard, collection.id)}
                   onMove={(moveCard) => onMoveCard(moveCard, collection.id)}
+                  onAI={onAICard ? (c) => onAICard(c, collection.id) : undefined}
                 />
               ))}
             </div>
@@ -269,13 +277,15 @@ function CardItem({
   collectionId,
   onDelete,
   onEdit,
-  onMove
+  onMove,
+  onAI
 }: {
   card: Card;
   collectionId: string;
   onDelete: () => void;
   onEdit: (card: Card) => void;
   onMove: (card: Card) => void;
+  onAI?: (card: Card) => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
@@ -364,6 +374,20 @@ function CardItem({
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
         </button>
+        {/* AI 分析按钮 */}
+        {onAI && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onAI(card);
+            }}
+            className="p-1 hover:bg-dark-600 rounded text-dark-500 hover:text-indigo-400 transition-all"
+            title="AI 分析"
+          >
+            <Sparkles size={12} />
+          </button>
+        )}
         {/* 分享/编辑按钮 */}
         <button
           onClick={(e) => {
@@ -680,6 +704,156 @@ function MoveCardModal({
   );
 }
 
+// API Key 设置弹窗
+function ApiKeyModal({
+  isOpen,
+  onClose
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  const [apiKey, setApiKey] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const loadApiKey = async () => {
+      const key = await getMiniMaxApiKey();
+      if (key) {
+        setApiKey(key);
+      }
+    };
+    if (isOpen) {
+      loadApiKey();
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSave = async () => {
+    if (!apiKey.trim()) return;
+    setSaving(true);
+    try {
+      await setMiniMaxApiKey(apiKey.trim());
+      onClose();
+    } catch (error) {
+      console.error('保存 API Key 失败:', error);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-dark-800 rounded-xl p-6 w-[420px] border border-dark-700">
+        <div className="flex items-center gap-2 mb-4">
+          <Key size={20} className="text-indigo-400" />
+          <h3 className="text-lg font-medium text-dark-100">MiniMax API 配置</h3>
+        </div>
+        <p className="text-sm text-dark-400 mb-4">
+          请输入您的 MiniMax API Key 以启用 AI 分析功能。
+        </p>
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder="sk-xxxxxxxxxxxxxxxx"
+          className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500 mb-4"
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 bg-dark-700 text-dark-300 rounded-lg hover:bg-dark-600"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !apiKey.trim()}
+            className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 disabled:opacity-50"
+          >
+            {saving ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// AI 分析结果弹窗
+function AIResultModal({
+  isOpen,
+  result,
+  onClose,
+  onApply
+}: {
+  isOpen: boolean;
+  result: AIAnalysisResult | null;
+  onClose: () => void;
+  onApply: () => void;
+}) {
+  if (!isOpen || !result) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-dark-800 rounded-xl p-6 w-[480px] border border-dark-700 max-h-[80vh] overflow-y-auto">
+        <div className="flex items-center gap-2 mb-4">
+          <Sparkles size={20} className="text-indigo-400" />
+          <h3 className="text-lg font-medium text-dark-100">AI 分析结果</h3>
+        </div>
+
+        {result.title && (
+          <div className="mb-4">
+            <label className="block text-sm text-dark-400 mb-1">建议标题</label>
+            <p className="text-dark-100 bg-dark-700 rounded-lg px-3 py-2">{result.title}</p>
+          </div>
+        )}
+
+        <div className="mb-4">
+          <label className="block text-sm text-dark-400 mb-1">内容摘要</label>
+          <p className="text-dark-100 bg-dark-700 rounded-lg px-3 py-2 text-sm leading-relaxed">
+            {result.summary}
+          </p>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm text-dark-400 mb-1">关键词</label>
+          <div className="flex flex-wrap gap-2">
+            {result.keywords.map((keyword, index) => (
+              <span
+                key={index}
+                className="px-2 py-1 bg-indigo-600/30 text-indigo-300 text-xs rounded-full"
+              >
+                {keyword}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm text-dark-400 mb-1">分类</label>
+          <span className="inline-flex items-center px-2 py-1 bg-purple-600/30 text-purple-300 text-sm rounded-lg">
+            {result.category}
+          </span>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 bg-dark-700 text-dark-300 rounded-lg hover:bg-dark-600"
+          >
+            关闭
+          </button>
+          <button
+            onClick={onApply}
+            className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500"
+          >
+            同步到描述
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MainContent({
   collections,
   onCollectionsChange,
@@ -698,6 +872,15 @@ export default function MainContent({
 
   // 移动卡片状态
   const [movingCard, setMovingCard] = useState<{ card: Card; collectionId: string } | null>(null);
+
+  // API Key 设置状态
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+
+  // AI 分析状态
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
+  const [aiResultCard, setAiResultCard] = useState<{ card: Card; collectionId: string } | null>(null);
+  const [aiProgress, setAiProgress] = useState({ current: 0, total: 0 });
 
   // 全局拖拽处理 - 处理从右侧面板拖入的标签页
   useEffect(() => {
@@ -1044,6 +1227,107 @@ export default function MainContent({
     setMovingCard(null);
   };
 
+  // AI 分析单个卡片
+  const handleAICard = async (card: Card, collectionId: string) => {
+    const apiKey = await getMiniMaxApiKey();
+    if (!apiKey) {
+      setShowApiKeyModal(true);
+      return;
+    }
+
+    setAiAnalyzing(true);
+    setAiProgress({ current: 0, total: 1 });
+
+    try {
+      // 通过 chrome.tabs API 获取对应标签页的内容
+      const tabs = await chrome.tabs.query({ url: card.url });
+      let content = '';
+
+      if (tabs.length > 0) {
+        // 如果标签页已打开，提取内容
+        const { extractPageContent } = await import('../utils/ai');
+        content = await extractPageContent(tabs[0].id);
+      }
+
+      let result: AIAnalysisResult;
+
+      if (content && content.length > 50) {
+        const { analyzeContent: doAnalyze } = await import('../utils/ai');
+        result = await doAnalyze(content, card.title, apiKey);
+      } else {
+        // 如果无法提取内容，返回提示
+        result = {
+          summary: '无法提取页面内容，请确保页面已加载完成后再试。',
+          keywords: [],
+          category: '未知'
+        };
+      }
+
+      setAiResult(result);
+      setAiResultCard({ card, collectionId });
+    } catch (error) {
+      console.error('AI 分析失败:', error);
+      setAiResult({
+        summary: '分析失败: ' + (error as Error).message,
+        keywords: [],
+        category: '错误'
+      });
+      setAiResultCard({ card, collectionId });
+    }
+
+    setAiAnalyzing(false);
+  };
+
+  // 应用 AI 结果到卡片
+  const handleApplyAIResult = () => {
+    if (!aiResult || !aiResultCard) return;
+
+    const { card, collectionId } = aiResultCard;
+    const targetCollection = allCollections.find(c => c.id === collectionId);
+
+    if (targetCollection) {
+      // 将 AI 结果组合成描述
+      const description = [
+        aiResult.title ? `标题: ${aiResult.title}` : '',
+        `摘要: ${aiResult.summary}`,
+        aiResult.keywords.length > 0 ? `关键词: ${aiResult.keywords.join(', ')}` : '',
+        `分类: ${aiResult.category}`
+      ].filter(Boolean).join('\n');
+
+      const updatedCards = targetCollection.cards.map(c =>
+        c.id === card.id
+          ? {
+              ...c,
+              title: aiResult.title || c.title,
+              description,
+              updatedAt: Date.now()
+            }
+          : c
+      );
+
+      const updatedCollection = {
+        ...targetCollection,
+        cards: updatedCards,
+        updatedAt: Date.now()
+      };
+
+      const newCollections = allCollections.map(c =>
+        c.id === targetCollection.id ? updatedCollection : c
+      );
+
+      onCollectionsChange(newCollections);
+    }
+
+    setAiResult(null);
+    setAiResultCard(null);
+  };
+
+  // 关闭 AI 结果弹窗
+  const handleCloseAIResult = () => {
+    setAiResult(null);
+    setAiResultCard(null);
+  };
+
   return (
     <main className="flex-1 h-full flex flex-col bg-dark-950 overflow-hidden">
       {/* 顶部功能区 */}
@@ -1072,6 +1356,14 @@ export default function MainContent({
             <Plus size={16} />
             添加集合
           </button>
+
+          <button
+            onClick={() => setShowApiKeyModal(true)}
+            className="p-2 text-dark-400 hover:text-dark-200 hover:bg-dark-800 rounded-lg"
+            title="AI 设置"
+          >
+            <Settings size={18} />
+          </button>
         </div>
       </header>
 
@@ -1099,6 +1391,7 @@ export default function MainContent({
                   onAddCard={handleAddCard}
                   onEditCard={handleEditCard}
                   onMoveCard={handleMoveCard}
+                  onAICard={handleAICard}
                   isOver={overId === collection.id}
                 />
               ))}
@@ -1155,6 +1448,30 @@ export default function MainContent({
         onClose={() => setMovingCard(null)}
         onMove={handleCardMoved}
       />
+
+      {/* API Key 设置弹窗 */}
+      <ApiKeyModal
+        isOpen={showApiKeyModal}
+        onClose={() => setShowApiKeyModal(false)}
+      />
+
+      {/* AI 分析结果弹窗 */}
+      <AIResultModal
+        isOpen={!!aiResult}
+        result={aiResult}
+        onClose={handleCloseAIResult}
+        onApply={handleApplyAIResult}
+      />
+
+      {/* AI 分析中加载提示 */}
+      {aiAnalyzing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-dark-800 rounded-xl p-6 border border-dark-700 flex items-center gap-3">
+            <Loader2 size={20} className="text-indigo-400 animate-spin" />
+            <span className="text-dark-100">AI 分析中...</span>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
