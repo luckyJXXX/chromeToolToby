@@ -1,26 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Collection, Space, Card } from '../types';
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-  DragOverlay,
-  DragStartEvent,
-  useDraggable
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  useSortable
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import {
   Grid3X3,
   List,
   PanelLeft,
@@ -70,7 +50,6 @@ function SortableCollection({
   onEditCard,
   onMoveCard,
   onAICard,
-  isOver,
   viewMode,
   onDrop
 }: {
@@ -82,7 +61,6 @@ function SortableCollection({
   onEditCard: (card: Card, collectionId: string) => void;
   onMoveCard: (card: Card, collectionId: string) => void;
   onAICard?: (card: Card, collectionId: string) => void;
-  isOver?: boolean;
   viewMode?: 'grid' | 'list' | 'compact';
   onDrop?: (collectionId: string, e: React.DragEvent) => void;
 }) {
@@ -101,21 +79,6 @@ function SortableCollection({
     window.addEventListener('toggle-menu' as keyof WindowEventMap, handleToggleMenu as EventListener);
     return () => window.removeEventListener('toggle-menu' as keyof WindowEventMap, handleToggleMenu as EventListener);
   }, [collection.id, showMenu]);
-
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({ id: collection.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1
-  };
 
   const handleSave = () => {
     onUpdate({ ...collection, name: editName });
@@ -162,28 +125,18 @@ function SortableCollection({
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
       data-collection-id={collection.id}
       onDragOver={handleNativeDragOver}
       onDragEnter={handleNativeDragEnter}
       onDragLeave={handleNativeDragLeave}
       onDrop={handleNativeDrop}
-      className={`bg-dark-800/50 rounded-xl border transition-all ${
-        isOver
-          ? 'border-indigo-500 ring-2 ring-indigo-500/30 bg-indigo-600/10'
-          : 'border-dark-700/50'
-      }`}
+      className="bg-dark-800/50 rounded-xl border border-dark-700/50 transition-all"
     >
       {/* Collection 标题栏 */}
       <div className="flex items-center gap-2 p-4 border-b border-dark-700/50">
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-dark-500 hover:text-dark-300"
-        >
+        <div className="text-dark-500 hover:text-dark-300 cursor-grab">
           <GripVertical size={16} />
-        </button>
+        </div>
 
         <button
           onClick={() => setIsExpanded(!isExpanded)}
@@ -365,23 +318,18 @@ function CardItem({
     return () => window.removeEventListener('toggle-menu' as keyof WindowEventMap, handleToggleMenu as EventListener);
   }, [card.id, showMenu]);
 
-  // 拖拽功能
-  const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({
-    id: card.id,
-    data: { type: 'card', card, sourceCollectionId: collectionId }
-  });
-
-  const style = transform ? {
-    transform: `translate(${transform.x}px, ${transform.y}px)`,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 1000 : 'auto'
-  } : undefined;
+  // 简化拖拽：使用原生 HTML5 拖拽
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('text/plain', JSON.stringify({
+      type: 'card',
+      cardId: card.id,
+      sourceCollectionId: collectionId
+    }));
+    e.dataTransfer.effectAllowed = 'move';
+  };
 
   // 处理打开链接
   const handleClick = (_e: React.MouseEvent) => {
-    // 如果正在拖拽，不触发点击
-    if (isDragging) return;
-
     if (showMenu) {
       setShowMenu(false);
       return;
@@ -408,7 +356,8 @@ function CardItem({
 
   return (
     <div
-      style={style}
+      draggable
+      onDragStart={handleDragStart}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       className={`flex items-center gap-2 bg-dark-800 hover:bg-dark-700 rounded-lg group cursor-pointer transition-colors ${
@@ -417,9 +366,6 @@ function CardItem({
     >
       {/* 拖拽手柄区域 */}
       <div
-        ref={setDragRef}
-        {...attributes}
-        {...listeners}
         className={`flex items-center gap-2 flex-1 min-w-0 ${isCompact ? '' : ''}`}
       >
         <div className={`flex-shrink-0 ${isCompact ? 'w-4 h-4' : 'w-5 h-5'}`}>
@@ -555,8 +501,6 @@ export default function MainContent({
   onModalMovingCardChange
 }: MainContentProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'compact'>('grid');
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
   const [, setMenuOpenId] = useState<string | null>(null);
 
   // 使用 props 传入的模态框状态，如果没传入则使用内部状态
@@ -679,140 +623,32 @@ export default function MainContent({
     };
   }, []);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 10 // 需要移动 10px 才能激活拖拽
-      }
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates
-    })
-  );
+  // 处理卡片跨集合拖拽
+  const handleCardMove = useCallback((cardId: string, sourceCollectionId: string, targetCollectionId: string) => {
+    const sourceCollection = allCollections.find(c => c.id === sourceCollectionId);
+    const targetCollection = allCollections.find(c => c.id === targetCollectionId);
 
-  const handleDragStart = (event: DragStartEvent) => {
-    // 检测是否是外部拖拽（从右侧面板拖入的标签页）
-    const externalDragData = (window as any).__TOBY_EXTERNAL_DRAG__;
-    if (externalDragData) {
-      // 外部拖拽开始，设置 dnd-kit 的 active 数据
-      event.active.data.current = {
-        isExternal: true,
-        externalData: externalDragData
-      };
-      isDraggingFromRightRef.current = true;
-    }
-    setActiveId(event.active.id as string);
-  };
+    if (sourceCollection && targetCollection) {
+      const card = sourceCollection.cards.find(c => c.id === cardId);
+      if (card) {
+        // 从原集合删除
+        const newSourceCards = sourceCollection.cards.filter(c => c.id !== cardId);
+        const newSourceCollection = { ...sourceCollection, cards: newSourceCards, updatedAt: Date.now() };
 
-  const handleDragOver = (event: { over: { id: string | number } | null }) => {
-    if (event.over) {
-      setOverId(event.over.id?.toString() || null);
-    } else {
-      setOverId(null);
-    }
-  };
+        // 添加到目标集合
+        const newTargetCards = [...targetCollection.cards, { ...card, updatedAt: Date.now() }];
+        const newTargetCollection = { ...targetCollection, cards: newTargetCards, updatedAt: Date.now() };
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
+        const newCollections = allCollections.map(c => {
+          if (c.id === sourceCollectionId) return newSourceCollection;
+          if (c.id === targetCollectionId) return newTargetCollection;
+          return c;
+        });
 
-    // 处理外部拖拽（从右侧面板拖入的标签页）
-    const activeData = active?.data?.current;
-    if (activeData?.isExternal && over) {
-      // 外部拖拽结束，将标签添加到目标集合
-      const targetCollectionId = over.id.toString();
-      const externalData = activeData.externalData;
-
-      if (externalData && externalData.type === 'tab') {
-        const targetCollection = allCollections.find(c => c.id === targetCollectionId);
-        if (targetCollection && externalData.url) {
-          const newCard: Card = {
-            id: `card-${Date.now()}`,
-            url: externalData.url,
-            title: externalData.title || '无标题',
-            favicon: externalData.favIconUrl,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          };
-
-          const updatedCollection = {
-            ...targetCollection,
-            cards: [...targetCollection.cards, newCard],
-            updatedAt: Date.now()
-          };
-
-          const newCollections = allCollections.map(c =>
-            c.id === targetCollection.id ? updatedCollection : c
-          );
-
-          onCollectionsChange(newCollections);
-
-          // 关闭原始标签页
-          if (externalData.tabId) {
-            try {
-              await chrome.tabs.remove(externalData.tabId);
-            } catch (e) {
-              console.error('关闭标签页失败:', e);
-            }
-          }
-        }
-      }
-    }
-
-    // 处理卡片的跨集合拖拽
-    if (over && active.data.current?.type === 'card') {
-      const card = active.data.current.card as Card;
-      const sourceCollectionId = active.data.current.sourceCollectionId as string;
-      const targetCollectionId = over.id.toString().replace('drop-', '');
-
-      if (sourceCollectionId && targetCollectionId && sourceCollectionId !== targetCollectionId) {
-        const sourceCollection = allCollections.find(c => c.id === sourceCollectionId);
-        const targetCollection = allCollections.find(c => c.id === targetCollectionId);
-
-        if (sourceCollection && targetCollection) {
-          // 从原集合删除
-          const updatedSourceCards = sourceCollection.cards.filter(c => c.id !== card.id);
-          const updatedSourceCollection = {
-            ...sourceCollection,
-            cards: updatedSourceCards,
-            updatedAt: Date.now()
-          };
-
-          // 添加到目标集合
-          const updatedTargetCollection = {
-            ...targetCollection,
-            cards: [...targetCollection.cards, { ...card, updatedAt: Date.now() }],
-            updatedAt: Date.now()
-          };
-
-          const newCollections = allCollections.map(c => {
-            if (c.id === sourceCollectionId) return updatedSourceCollection;
-            if (c.id === targetCollectionId) return updatedTargetCollection;
-            return c;
-          });
-
-          onCollectionsChange(newCollections);
-        }
-
-        setActiveId(null);
-        setOverId(null);
-        return;
-      }
-    }
-
-    // 处理 Collection 排序
-    if (over && active.id !== over.id) {
-      const oldIndex = collections.findIndex(c => c.id === active.id);
-      const newIndex = collections.findIndex(c => c.id === over.id);
-
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const newCollections = arrayMove(collections, oldIndex, newIndex);
         onCollectionsChange(newCollections);
       }
     }
-
-    setActiveId(null);
-    setOverId(null);
-  };
+  }, [allCollections, onCollectionsChange]);
 
   const handleAddCollection = () => {
     const newCollection: Collection = {
@@ -1130,87 +966,56 @@ export default function MainContent({
         </div>
       </header>
 
-      {/* Collections 列表 */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-          autoScroll={false}
-        >
-          {/* 原生拖拽处理层 - 放在 DndContext 内部但在 SortableContext 外部 */}
-          {/* 使用 pointer-events-none 让事件穿透到子元素，但捕获 drop 事件 */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{ zIndex: 10 }}
-            onDragOver={(e) => {
-              // 调试
-              console.log('[DndContext Wrapper] DragOver');
-              e.preventDefault();
-              e.stopPropagation();
-              if (e.dataTransfer) {
-                e.dataTransfer.dropEffect = 'move';
-              }
-            }}
-            onDrop={(e) => {
-              // 调试
-              console.log('[DndContext Wrapper] Drop');
-              e.preventDefault();
-              e.stopPropagation();
-
-              const dataStr = e.dataTransfer?.getData('text/plain');
-              console.log('[DndContext Wrapper] Drop data:', dataStr);
-
-              if (dataStr) {
-                try {
-                  const data = JSON.parse(dataStr);
-                  if (data.type === 'tab') {
-                    // 默认添加到第一个集合
-                    if (collections.length > 0) {
-                      handleExternalDrop(collections[0].id, e);
-                    }
-                  }
-                } catch (err) {
-                  console.error('[DndContext Wrapper] Drop error:', err);
+      {/* Collections 列表 - 使用纯原生 HTML5 拖拽 */}
+      <div
+        className="flex-1 overflow-y-auto p-6"
+        onDragOver={(e) => {
+          // 关键：允许 drop
+          e.preventDefault();
+          if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = 'move';
+          }
+        }}
+        onDrop={(e) => {
+          // 处理从右侧面板拖入的标签页
+          e.preventDefault();
+          const dataStr = e.dataTransfer?.getData('text/plain');
+          if (dataStr) {
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.type === 'tab' && collections.length > 0) {
+                // 添加到第一个集合
+                handleExternalDrop(collections[0].id, e);
+              } else if (data.type === 'card') {
+                // 处理卡片的跨集合拖拽
+                const targetCollectionId = (e.target as HTMLElement).closest('[data-collection-id]')?.getAttribute('data-collection-id');
+                if (targetCollectionId && data.sourceCollectionId !== targetCollectionId) {
+                  handleCardMove(data.cardId, data.sourceCollectionId, targetCollectionId);
                 }
               }
-            }}
-          />
-
-          <SortableContext
-            items={collections.map(c => c.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="space-y-4 pointer-events-auto">
-              {collections.map((collection) => (
-                <SortableCollection
-                  key={collection.id}
-                  collection={collection}
-                  onUpdate={handleUpdateCollection}
-                  onDelete={handleDeleteCollection}
-                  onOpenAll={handleOpenAll}
-                  onAddCard={handleAddCard}
-                  onEditCard={handleEditCard}
-                  onMoveCard={handleMoveCard}
-                  onAICard={handleAICard}
-                  isOver={overId === collection.id}
-                  viewMode={viewMode}
-                  onDrop={handleExternalDrop}
-                />
-              ))}
-            </div>
-          </SortableContext>
-
-          <DragOverlay>
-            {activeId ? (
-              <div className="bg-dark-800 rounded-xl border-2 border-indigo-500 p-4 opacity-80">
-                移动中...
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+            } catch (err) {
+              console.error('Drop error:', err);
+            }
+          }
+        }}
+      >
+        <div className="space-y-4">
+          {collections.map((collection) => (
+            <SortableCollection
+              key={collection.id}
+              collection={collection}
+              onUpdate={handleUpdateCollection}
+              onDelete={handleDeleteCollection}
+              onOpenAll={handleOpenAll}
+              onAddCard={handleAddCard}
+              onEditCard={handleEditCard}
+              onMoveCard={handleMoveCard}
+              onAICard={handleAICard}
+              viewMode={viewMode}
+              onDrop={handleExternalDrop}
+            />
+          ))}
+        </div>
 
         {collections.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-dark-500">
