@@ -247,6 +247,38 @@ async function runTests() {
   }
   console.log('');
 
+  // Test 9: Popup.js Drag & Drop
+  console.log('【Test 9】Popup.js Drag & Drop');
+  console.log('-'.repeat(50));
+  try {
+    const popup = readFileSync(join(PROJECT_ROOT, 'popup/popup.js'), 'utf-8');
+
+    const tests = [
+      { name: 'render() function with requestAnimationFrame', pattern: 'requestAnimationFrame' },
+      { name: 'isDragging variable for debounce', pattern: 'let isDragging' },
+      { name: 'handleDragOver event handler', pattern: 'function handleDragOver' },
+      { name: 'handleDrop event handler', pattern: 'function handleDrop' },
+      { name: 'e.preventDefault() first in handleDrop', pattern: 'e.preventDefault();\n  e.stopPropagation();' },
+      { name: 'try-catch in handleDrop', pattern: 'try {' },
+      { name: 'handleExternalDrop function', pattern: 'async function handleExternalDrop' },
+      { name: 'bindDragEvents function', pattern: 'function bindDragEvents' },
+    ];
+
+    for (const test of tests) {
+      if (popup.includes(test.pattern)) {
+        console.log(`  ✓ ${test.name}`);
+        passed++;
+      } else {
+        console.log(`  ✗ ${test.name} MISSING`);
+        failed++;
+      }
+    }
+  } catch (error) {
+    console.log(`  ✗ Error: ${error.message}`);
+    failed++;
+  }
+  console.log('');
+
   // Summary
   console.log('='.repeat(60));
   console.log('Test Summary');

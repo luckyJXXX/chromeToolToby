@@ -668,6 +668,16 @@ export default function MainContent({
   );
 
   const handleDragStart = (event: DragStartEvent) => {
+    // 检测是否是外部拖拽（从右侧面板拖入的标签页）
+    const externalDragData = (window as any).__TOBY_EXTERNAL_DRAG__;
+    if (externalDragData) {
+      // 外部拖拽开始，设置 dnd-kit 的 active 数据
+      event.active.data.current = {
+        isExternal: true,
+        externalData: externalDragData
+      };
+      isDraggingFromRightRef.current = true;
+    }
     setActiveId(event.active.id as string);
   };
 
@@ -679,8 +689,51 @@ export default function MainContent({
     }
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
+
+    // 处理外部拖拽（从右侧面板拖入的标签页）
+    const activeData = active?.data?.current;
+    if (activeData?.isExternal && over) {
+      // 外部拖拽结束，将标签添加到目标集合
+      const targetCollectionId = over.id.toString();
+      const externalData = activeData.externalData;
+
+      if (externalData && externalData.type === 'tab') {
+        const targetCollection = allCollections.find(c => c.id === targetCollectionId);
+        if (targetCollection && externalData.url) {
+          const newCard: Card = {
+            id: `card-${Date.now()}`,
+            url: externalData.url,
+            title: externalData.title || '无标题',
+            favicon: externalData.favIconUrl,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+
+          const updatedCollection = {
+            ...targetCollection,
+            cards: [...targetCollection.cards, newCard],
+            updatedAt: Date.now()
+          };
+
+          const newCollections = allCollections.map(c =>
+            c.id === targetCollection.id ? updatedCollection : c
+          );
+
+          onCollectionsChange(newCollections);
+
+          // 关闭原始标签页
+          if (externalData.tabId) {
+            try {
+              await chrome.tabs.remove(externalData.tabId);
+            } catch (e) {
+              console.error('关闭标签页失败:', e);
+            }
+          }
+        }
+      }
+    }
 
     // 处理卡片的跨集合拖拽
     if (over && active.data.current?.type === 'card') {

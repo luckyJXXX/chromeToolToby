@@ -11,11 +11,50 @@ let allTabs = [];
 let allFavorites = [];
 let allHistory = [];
 
+// ========== 渲染节流 ==========
+// 使用 requestAnimationFrame 控制 UI 刷新频率
+let rafId = null;
+let isRenderScheduled = false;
+
+function render() {
+  // 如果正在拖拽，禁止 UI 刷新
+  if (isDragging) return;
+
+  // 如果已经在等待渲染，直接返回
+  if (isRenderScheduled) return;
+
+  isRenderScheduled = true;
+
+  // 取消之前的渲染任务
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+  }
+
+  // 使用 requestAnimationFrame 进行节流
+  rafId = requestAnimationFrame(() => {
+    // 再次检查拖拽状态
+    if (isDragging) {
+      isRenderScheduled = false;
+      rafId = null;
+      return;
+    }
+    renderCurrentTab();
+    isRenderScheduled = false;
+    rafId = null;
+  });
+}
+
+// ========== 拖拽状态管理 ==========
+// 拖拽防抖开关
+let isDragging = false;
+let dragCounter = 0;
+
 // ========== 初始化 ==========
 
 async function init() {
   await loadAllData();
   bindEvents();
+  bindDragEvents();
   renderCurrentTab();
 }
 
@@ -80,6 +119,111 @@ function bindEvents() {
   document.getElementById('overlay').addEventListener('click', closeSettings);
   document.getElementById('importBtn').addEventListener('click', importData);
   document.getElementById('clearAllBtn').addEventListener('click', clearAllData);
+}
+
+// ========== 拖拽事件绑定 ==========
+
+function bindDragEvents() {
+  const dropZone = document.getElementById('dropZone') || document.body;
+
+  // onDragEnter - 记录进入拖拽区域
+  dropZone.addEventListener('dragenter', handleDragEnter);
+
+  // onDragOver - 阻止默认行为，使用开关防止 UI 刷新
+  dropZone.addEventListener('dragover', handleDragOver);
+
+  // onDragLeave - 记录离开
+  dropZone.addEventListener('dragleave', handleDragLeave);
+
+  // onDrop - 事件隔离，确保数据更新安全
+  dropZone.addEventListener('drop', handleDrop);
+}
+
+// ========== 拖拽事件处理函数 ==========
+
+function handleDragEnter(e) {
+  // 拖拽开始时设置标志
+  dragCounter++;
+  isDragging = true;
+}
+
+function handleDragOver(e) {
+  // 拖拽过程中禁止 UI 刷新
+  // 第一步：阻止默认行为
+  e.preventDefault();
+  e.stopPropagation();
+
+  // 设置 dropEffect
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'copy';
+  }
+
+  // 拖拽过程中不触发任何 UI 渲染
+  // isDragging 开关已阻止渲染
+}
+
+function handleDragLeave(e) {
+  dragCounter--;
+  if (dragCounter <= 0) {
+    isDragging = false;
+    dragCounter = 0;
+  }
+}
+
+function handleDrop(e) {
+  // ========== 事件隔离 ==========
+  // 第一行代码必须是 preventDefault 和 stopPropagation
+  e.preventDefault();
+  e.stopPropagation();
+
+  // 重置拖拽状态
+  isDragging = false;
+  dragCounter = 0;
+
+  // 获取数据
+  const dataStr = e.dataTransfer?.getData('text/plain');
+  if (!dataStr) return;
+
+  // ========== 数据更新逻辑封装在 try-catch 中 ==========
+  try {
+    const data = JSON.parse(dataStr);
+
+    // 根据数据类型处理
+    if (data.type === 'url' || data.type === 'tab') {
+      handleExternalDrop(data);
+    }
+  } catch (err) {
+    console.error('Drop 处理失败:', err);
+    // 确保任何存储错误都不会导致整个页面崩溃
+  }
+}
+
+// 处理外部拖入的数据
+async function handleExternalDrop(data) {
+  try {
+    const { url, title, favIconUrl } = data;
+
+    // 创建收藏
+    const favorite = {
+      id: `fav-${Date.now()}`,
+      url: url,
+      title: title || '无标题',
+      favicon: favIconUrl || '',
+      domain: new URL(url).hostname,
+      createdAt: Date.now()
+    };
+
+    // 保存到存储 - 使用防抖机制
+    await Storage.addFavorite(favorite);
+
+    // 手动触发数据更新后才执行渲染
+    allFavorites = await Storage.getFavorites();
+
+    // 使用节流渲染
+    render();
+  } catch (err) {
+    console.error('保存收藏失败:', err);
+  }
 }
 
 // ========== 标签切换 ==========
