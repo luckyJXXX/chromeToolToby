@@ -28,17 +28,30 @@ function DraggableTab({
   onDragStart: (tab: ChromeTab) => void;
 }) {
   const handleDragStart = (e: React.DragEvent) => {
-    // 设置外部拖拽标记，供 MainContent 的 DndContext 检测
-    (window as any).__TOBY_EXTERNAL_DRAG__ = {
+    // 调试：打印拖拽开始
+    console.log('[DragStart] 右侧标签开始拖拽:', {
+      tabId: tab.id,
+      title: tab.title,
+      url: tab.url
+    });
+
+    // 设置完整数据
+    const tabData = {
       type: 'tab',
       tabId: tab.id,
       url: tab.url,
-      title: tab.title,
+      title: tab.title || '无标题',
       favIconUrl: tab.favIconUrl
     };
 
-    e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'tab', tabId: tab.id, url: tab.url, title: tab.title, favIconUrl: tab.favIconUrl }));
+    // 设置外部拖拽标记，供 MainContent 的 DndContext 检测
+    (window as any).__TOBY_EXTERNAL_DRAG__ = tabData;
+
+    // 标准化：设置 dataTransfer 数据
+    e.dataTransfer.setData('text/plain', JSON.stringify(tabData));
     e.dataTransfer.effectAllowed = 'move';
+
+    // 调用回调
     onDragStart(tab);
   };
 

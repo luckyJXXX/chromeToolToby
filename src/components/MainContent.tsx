@@ -124,6 +124,9 @@ function SortableCollection({
 
   // 处理外部拖拽（从右侧面板拖入的标签页）- 使用原生事件
   const handleNativeDragOver = (e: React.DragEvent) => {
+    // 调试：打印 dragover
+    console.log('[DragOver] 集合区:', collection.id, collection.name);
+
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer) {
@@ -131,9 +134,27 @@ function SortableCollection({
     }
   };
 
+  const handleNativeDragEnter = (_e: React.DragEvent) => {
+    // 调试：打印 dragenter
+    console.log('[DragEnter] 进入集合区:', collection.id, collection.name);
+  };
+
+  const handleNativeDragLeave = (_e: React.DragEvent) => {
+    // 调试：打印 dragleave
+    console.log('[DragLeave] 离开集合区:', collection.id, collection.name);
+  };
+
   const handleNativeDrop = (e: React.DragEvent) => {
+    // 调试：打印 drop
+    console.log('[Drop] 放置到集合区:', collection.id, collection.name);
+
     e.preventDefault();
     e.stopPropagation();
+
+    // 尝试获取数据
+    const dataStr = e.dataTransfer?.getData('text/plain');
+    console.log('[Drop] 获取到的数据:', dataStr);
+
     if (onDrop) {
       onDrop(collection.id, e);
     }
@@ -145,6 +166,8 @@ function SortableCollection({
       style={style}
       data-collection-id={collection.id}
       onDragOver={handleNativeDragOver}
+      onDragEnter={handleNativeDragEnter}
+      onDragLeave={handleNativeDragLeave}
       onDrop={handleNativeDrop}
       className={`bg-dark-800/50 rounded-xl border transition-all ${
         isOver
@@ -1117,11 +1140,50 @@ export default function MainContent({
           onDragEnd={handleDragEnd}
           autoScroll={false}
         >
+          {/* 原生拖拽处理层 - 放在 DndContext 内部但在 SortableContext 外部 */}
+          {/* 使用 pointer-events-none 让事件穿透到子元素，但捕获 drop 事件 */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ zIndex: 10 }}
+            onDragOver={(e) => {
+              // 调试
+              console.log('[DndContext Wrapper] DragOver');
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.dataTransfer) {
+                e.dataTransfer.dropEffect = 'move';
+              }
+            }}
+            onDrop={(e) => {
+              // 调试
+              console.log('[DndContext Wrapper] Drop');
+              e.preventDefault();
+              e.stopPropagation();
+
+              const dataStr = e.dataTransfer?.getData('text/plain');
+              console.log('[DndContext Wrapper] Drop data:', dataStr);
+
+              if (dataStr) {
+                try {
+                  const data = JSON.parse(dataStr);
+                  if (data.type === 'tab') {
+                    // 默认添加到第一个集合
+                    if (collections.length > 0) {
+                      handleExternalDrop(collections[0].id, e);
+                    }
+                  }
+                } catch (err) {
+                  console.error('[DndContext Wrapper] Drop error:', err);
+                }
+              }
+            }}
+          />
+
           <SortableContext
             items={collections.map(c => c.id)}
             strategy={verticalListSortingStrategy}
           >
-            <div className="space-y-4">
+            <div className="space-y-4 pointer-events-auto">
               {collections.map((collection) => (
                 <SortableCollection
                   key={collection.id}
