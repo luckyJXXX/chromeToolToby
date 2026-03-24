@@ -537,13 +537,23 @@ export default function MainContent({
       const dataStr = e.dataTransfer?.getData('text/plain');
       console.log('[Document] Drop data:', dataStr);
 
-      if (dataStr && collections.length > 0) {
+      if (dataStr) {
         try {
           const data = JSON.parse(dataStr);
           if (data.type === 'tab') {
-            console.log('[Document] Processing tab drop to first collection');
-            // 默认添加到第一个集合
-            const collectionId = collections[0].id;
+            // 找到用户实际放置的目标集合
+            const targetElement = (e.target as HTMLElement).closest('[data-collection-id]');
+            let collectionId: string;
+
+            if (targetElement) {
+              // 用户放置到了具体的集合
+              collectionId = targetElement.getAttribute('data-collection-id') || collections[0].id;
+              console.log('[Document] Dropped on collection:', collectionId);
+            } else {
+              // 没有放置到具体集合，默认第一个
+              collectionId = collections[0].id;
+              console.log('[Document] No specific collection, using first:', collectionId);
+            }
 
             const targetCollection = allCollections.find(c => c.id === collectionId);
             if (targetCollection && data.url) {
@@ -567,7 +577,7 @@ export default function MainContent({
               );
 
               onCollectionsChange(newCollections);
-              console.log('[Document] Card added successfully');
+              console.log('[Document] Card added to collection:', targetCollection.name);
 
               // 关闭原始标签页
               if (data.tabId) {
@@ -1070,9 +1080,16 @@ export default function MainContent({
               const data = JSON.parse(dataStr);
               console.log('[MainContent] Parsed data:', data);
               if (data.type === 'tab' && collections.length > 0) {
-                console.log('[MainContent] Adding tab to collection:', collections[0].id);
-                // 添加到第一个集合
-                handleExternalDrop(collections[0].id, e);
+                // 找到目标集合
+                const targetElement = (e.target as HTMLElement).closest('[data-collection-id]');
+                let collectionId: string;
+                if (targetElement) {
+                  collectionId = targetElement.getAttribute('data-collection-id') || collections[0].id;
+                } else {
+                  collectionId = collections[0].id;
+                }
+                console.log('[MainContent] Adding tab to collection:', collectionId);
+                handleExternalDrop(collectionId, e);
               } else if (data.type === 'card') {
                 // 处理卡片的跨集合拖拽
                 const targetCollectionId = (e.target as HTMLElement).closest('[data-collection-id]')?.getAttribute('data-collection-id');
