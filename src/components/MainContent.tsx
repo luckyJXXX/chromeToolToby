@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Collection, Space, Card } from '../types';
 import {
   DndContext,
@@ -10,7 +10,6 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
-  useDroppable,
   useDraggable
 } from '@dnd-kit/core';
 import {
@@ -35,17 +34,13 @@ import {
   GripVertical,
   X,
   Folder,
-  Link,
   Link2,
   Share,
   Copy,
   Check,
-  Unlink,
   Sparkles,
-  Loader2,
-  Settings
+  Loader2
 } from 'lucide-react';
-import { saveCollections } from '../utils/storage';
 import { getMiniMaxApiKey, analyzeContent, extractPageContent, AIAnalysisResult } from '../utils/ai';
 import { AddCardModal, EditCardModal, MoveCardModal, AIResultModal } from './modals';
 
@@ -56,6 +51,13 @@ interface MainContentProps {
   allCollections: Collection[];
   spaces?: Space[];
   onTabDropped?: (tabId: number) => void;
+  // 模态框控制
+  modalAddCardTo?: string | null;
+  onModalAddCardChange?: (collectionId: string | null) => void;
+  modalEditingCard?: { card: Card; collectionId: string } | null;
+  onModalEditingCardChange?: (card: { card: Card; collectionId: string } | null) => void;
+  modalMovingCard?: { card: Card; collectionId: string } | null;
+  onModalMovingCardChange?: (card: { card: Card; collectionId: string } | null) => void;
 }
 
 // 可排序的 Collection 组件
@@ -68,7 +70,9 @@ function SortableCollection({
   onEditCard,
   onMoveCard,
   onAICard,
-  isOver
+  isOver,
+  viewMode,
+  onDrop
 }: {
   collection: Collection;
   onUpdate: (collection: Collection) => void;
@@ -79,6 +83,8 @@ function SortableCollection({
   onMoveCard: (card: Card, collectionId: string) => void;
   onAICard?: (card: Card, collectionId: string) => void;
   isOver?: boolean;
+  viewMode?: 'grid' | 'list' | 'compact';
+  onDrop?: (collectionId: string, e: React.DragEvent) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
@@ -105,12 +111,6 @@ function SortableCollection({
     isDragging
   } = useSortable({ id: collection.id });
 
-  // 添加 droppable 功能
-  const { setNodeRef: setDropNodeRef, isOver: isDropOver } = useDroppable({
-    id: `drop-${collection.id}`,
-    data: { type: 'collection', collection }
-  });
-
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -122,15 +122,32 @@ function SortableCollection({
     setIsEditing(false);
   };
 
-  const isHighlighted = isOver || isDropOver;
+  // 处理外部拖拽（从右侧面板拖入的标签页）- 使用原生事件
+  const handleNativeDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
+  };
+
+  const handleNativeDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (onDrop) {
+      onDrop(collection.id, e);
+    }
+  };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       data-collection-id={collection.id}
+      onDragOver={handleNativeDragOver}
+      onDrop={handleNativeDrop}
       className={`bg-dark-800/50 rounded-xl border transition-all ${
-        isHighlighted
+        isOver
           ? 'border-indigo-500 ring-2 ring-indigo-500/30 bg-indigo-600/10'
           : 'border-dark-700/50'
       }`}
@@ -251,11 +268,10 @@ function SortableCollection({
       {/* Cards 列表 - 也是 droppable 区域 */}
       {isExpanded && (
         <div
-          ref={setDropNodeRef}
           data-collection-id={collection.id}
-          className={`p-4 min-h-[100px] transition-colors ${
-            isDropOver ? 'bg-indigo-600/10' : ''
-          }`}
+          onDragOver={handleNativeDragOver}
+          onDrop={handleNativeDrop}
+          className="p-4 min-h-[100px] transition-colors"
         >
           {collection.cards.length === 0 ? (
             <div className="text-center py-8 text-dark-500 text-sm border-2 border-dashed border-dark-700 rounded-lg">
@@ -326,13 +342,10 @@ function CardItem({
     return () => window.removeEventListener('toggle-menu' as keyof WindowEventMap, handleToggleMenu as EventListener);
   }, [card.id, showMenu]);
 
-  // 拖拽功能 - 使用 activationConstraint 让拖拽需要移动 5px 才能激活
+  // 拖拽功能
   const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({
     id: card.id,
-    data: { type: 'card', card, sourceCollectionId: collectionId },
-    activationConstraint: {
-      distance: 5
-    }
+    data: { type: 'card', card, sourceCollectionId: collectionId }
   });
 
   const style = transform ? {
@@ -342,7 +355,7 @@ function CardItem({
   } : undefined;
 
   // 处理打开链接
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = (_e: React.MouseEvent) => {
     // 如果正在拖拽，不触发点击
     if (isDragging) return;
 
@@ -504,295 +517,37 @@ function CardItem({
   );
 }
 
-function EditCardModal({
-  isOpen,
-  card,
-  onClose,
-  onSave,
-  onDelete,
-  allCollections,
-  currentCollectionId,
-  spaces
-}: {
-  isOpen: boolean;
-  card: Card | null;
-  onClose: () => void;
-  onSave: (url: string, title: string, description?: string, shortUrl?: string, targetCollectionId?: string) => void;
-  onDelete?: () => void;
-  allCollections?: Collection[];
-  currentCollectionId?: string;
-  spaces?: Space[];
-}) {
-  const [url, setUrl] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [shortUrl, setShortUrl] = useState('');
-  const [targetCollectionId, setTargetCollectionId] = useState(currentCollectionId || '');
-
-  useEffect(() => {
-    if (card) {
-      setUrl(card.url);
-      setTitle(card.title);
-      setDescription(card.description || '');
-      setShortUrl(card.shortUrl || '');
-      setTargetCollectionId(currentCollectionId || '');
-    }
-  }, [card, currentCollectionId]);
-
-  if (!isOpen || !card) return null;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (url.trim()) {
-      onSave(url, title || url, description, shortUrl, targetCollectionId !== currentCollectionId ? targetCollectionId : undefined);
-      onClose();
-    }
-  };
-
-  // 获取集合所在的空间名称
-  const getSpaceName = (collection: Collection) => {
-    const space = spaces?.find(s => s.id === collection.spaceId);
-    return space?.name || '默认空间';
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-dark-800 rounded-xl p-6 w-[420px] border border-dark-700">
-        <h3 className="text-lg font-medium text-dark-100 mb-4">编辑链接</h3>
-        <form onSubmit={handleSubmit}>
-          <div className="mb-3">
-            <label className="block text-sm text-dark-400 mb-1">网址 *</label>
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com"
-              className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500"
-              required
-            />
-          </div>
-          <div className="mb-3">
-            <label className="block text-sm text-dark-400 mb-1">标题</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="输入标题"
-              className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500"
-            />
-          </div>
-          {allCollections && allCollections.length > 0 && (
-            <div className="mb-3">
-              <label className="block text-sm text-dark-400 mb-1">移动到</label>
-              <select
-                value={targetCollectionId}
-                onChange={(e) => setTargetCollectionId(e.target.value)}
-                className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 focus:outline-none focus:border-indigo-500"
-              >
-                {allCollections.map(collection => (
-                  <option key={collection.id} value={collection.id}>
-                    {getSpaceName(collection)} / {collection.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div className="mb-3">
-            <label className="block text-sm text-dark-400 mb-1">描述</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="输入描述（可选）"
-              rows={2}
-              className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500 resize-none"
-            />
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm text-dark-400 mb-1">
-              <Link size={12} className="inline mr-1" />
-              自定义短链
-            </label>
-            <input
-              type="text"
-              value={shortUrl}
-              onChange={(e) => setShortUrl(e.target.value)}
-              placeholder="输入短链（可选）"
-              className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500"
-            />
-          </div>
-          <div className="flex gap-2">
-            {onDelete && (
-              <button
-                type="button"
-                onClick={onDelete}
-                className="px-4 py-2 bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/30"
-              >
-                DELETE
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 bg-dark-700 text-dark-300 rounded-lg hover:bg-dark-600"
-            >
-              CANCEL
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500"
-            >
-              DONE
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// 移动卡片的弹窗
-function MoveCardModal({
-  isOpen,
-  card,
-  collections,
-  currentCollectionId,
-  onClose,
-  onMove
-}: {
-  isOpen: boolean;
-  card: Card | null;
-  collections: Collection[];
-  currentCollectionId: string;
-  onClose: () => void;
-  onMove: (targetCollectionId: string) => void;
-}) {
-  if (!isOpen || !card) return null;
-
-  // 排除当前所在的 Collection
-  const availableCollections = collections.filter(c => c.id !== currentCollectionId);
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-dark-800 rounded-xl p-6 w-80 max-h-[80vh] overflow-y-auto border border-dark-700">
-        <h3 className="text-lg font-medium text-dark-100 mb-4">移动到...</h3>
-        {availableCollections.length === 0 ? (
-          <p className="text-dark-500 text-sm py-4">没有其他集合可移动</p>
-        ) : (
-          <div className="space-y-1">
-            {availableCollections.map(collection => (
-              <button
-                key={collection.id}
-                onClick={() => {
-                  onMove(collection.id);
-                  onClose();
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-dark-300 hover:bg-dark-700 rounded-lg text-left"
-              >
-                <Folder size={14} className="text-indigo-400" />
-                {collection.name}
-                <span className="text-dark-500 text-xs ml-auto">
-                  {collection.cards.length} 个链接
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-        <button
-          onClick={onClose}
-          className="w-full mt-4 px-4 py-2 bg-dark-700 text-dark-300 rounded-lg hover:bg-dark-600"
-        >
-          取消
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// AI 分析结果弹窗
-function AIResultModal({
-  isOpen,
-  result,
-  onClose,
-  onApply
-}: {
-  isOpen: boolean;
-  result: AIAnalysisResult | null;
-  onClose: () => void;
-  onApply: () => void;
-}) {
-  if (!isOpen || !result) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-dark-800 rounded-xl p-6 w-[480px] border border-dark-700 max-h-[80vh] overflow-y-auto">
-        <div className="flex items-center gap-2 mb-4">
-          <Sparkles size={20} className="text-indigo-400" />
-          <h3 className="text-lg font-medium text-dark-100">AI 分析结果</h3>
-        </div>
-
-        {result.title && (
-          <div className="mb-4">
-            <label className="block text-sm text-dark-400 mb-1">建议标题</label>
-            <p className="text-dark-100 bg-dark-700 rounded-lg px-3 py-2">{result.title}</p>
-          </div>
-        )}
-
-        <div className="mb-4">
-          <label className="block text-sm text-dark-400 mb-1">内容摘要</label>
-          <p className="text-dark-100 bg-dark-700 rounded-lg px-3 py-2 text-sm leading-relaxed">
-            {result.summary}
-          </p>
-        </div>
-
-        <div className="mb-4">
-          <label className="block text-sm text-dark-400 mb-1">关键词</label>
-          <div className="flex flex-wrap gap-2">
-            {result.keywords.map((keyword, index) => (
-              <span
-                key={index}
-                className="px-2 py-1 bg-indigo-600/30 text-indigo-300 text-xs rounded-full"
-              >
-                {keyword}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div className="mb-4">
-          <label className="block text-sm text-dark-400 mb-1">分类</label>
-          <span className="inline-flex items-center px-2 py-1 bg-purple-600/30 text-purple-300 text-sm rounded-lg">
-            {result.category}
-          </span>
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 bg-dark-700 text-dark-300 rounded-lg hover:bg-dark-600"
-          >
-            关闭
-            同步到描述
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function MainContent({
   collections,
   onCollectionsChange,
   activeSpace,
   allCollections,
   spaces,
-  onTabDropped
+  onTabDropped,
+  modalAddCardTo,
+  onModalAddCardChange,
+  modalEditingCard,
+  onModalEditingCardChange,
+  modalMovingCard,
+  onModalMovingCardChange
 }: MainContentProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'compact'>('grid');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
-  const [addCardTo, setAddCardTo] = useState<string | null>(null);
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const mainRef = useRef<HTMLElement>(null);
+  const [, setMenuOpenId] = useState<string | null>(null);
+
+  // 使用 props 传入的模态框状态，如果没传入则使用内部状态
+  const [internalAddCardTo, setInternalAddCardTo] = useState<string | null>(null);
+  const addCardTo = modalAddCardTo !== undefined ? modalAddCardTo : internalAddCardTo;
+  const setAddCardTo = onModalAddCardChange || setInternalAddCardTo;
+
+  const [internalEditingCard, setInternalEditingCard] = useState<{ card: Card; collectionId: string } | null>(null);
+  const editingCard = modalEditingCard !== undefined ? modalEditingCard : internalEditingCard;
+  const setEditingCard = onModalEditingCardChange || setInternalEditingCard;
+
+  const [internalMovingCard, setInternalMovingCard] = useState<{ card: Card; collectionId: string } | null>(null);
+  const movingCard = modalMovingCard !== undefined ? modalMovingCard : internalMovingCard;
+  const setMovingCard = onModalMovingCardChange || setInternalMovingCard;
 
   // 全局菜单关闭 - 当打开一个新菜单时关闭其他菜单
   useEffect(() => {
@@ -803,92 +558,110 @@ export default function MainContent({
     return () => window.removeEventListener('toggle-menu' as keyof WindowEventMap, handleMenuToggle as EventListener);
   }, []);
 
-  // 编辑卡片状态
-  const [editingCard, setEditingCard] = useState<{ card: Card; collectionId: string } | null>(null);
-
-  // 移动卡片状态
-  const [movingCard, setMovingCard] = useState<{ card: Card; collectionId: string } | null>(null);
-
   // AI 分析状态
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
   const [aiResultCard, setAiResultCard] = useState<{ card: Card; collectionId: string } | null>(null);
-  const [aiProgress, setAiProgress] = useState({ current: 0, total: 0 });
+  const [_aiProgress, setAiProgress] = useState({ current: 0, total: 0 });
 
-  // 全局拖拽处理 - 处理从右侧面板拖入的标签页
-  useEffect(() => {
-    const handleDragOver = (e: DragEvent) => {
-      e.preventDefault();
-      e.dataTransfer!.dropEffect = 'move';
-    };
+  // ========== 拖拽状态管理 ==========
+  // 使用 ref 来存储拖拽状态，避免触发不必要的重渲染
+  const isDraggingFromRightRef = useRef(false);
+  const dragTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafRef = useRef<number | null>(null);
 
-    const handleDrop = async (e: DragEvent) => {
-      e.preventDefault();
+  // Step 3: onDrop - 仅提取数据，异步处理更新
+  const handleExternalDrop = useCallback(async (collectionId: string, e: React.DragEvent) => {
+    e.preventDefault();
 
-      const dataStr = e.dataTransfer!.getData('text/plain');
+    try {
+      // 确保 stopPropagation 被调用
+      e.stopPropagation();
+
+      const dataStr = e.dataTransfer?.getData('text/plain');
       if (!dataStr) return;
 
-      try {
-        const data = JSON.parse(dataStr);
+      const data = JSON.parse(dataStr);
 
-        if (data.type === 'tab') {
-          // 找到目标 Collection
-          const target = e.target as HTMLElement;
-          const collectionEl = target.closest('[data-collection-id]');
+      if (data.type === 'tab') {
+        // 找到目标 Collection
+        const targetCollection = allCollections.find(c => c.id === collectionId);
 
-          if (collectionEl) {
-            const collectionId = collectionEl.getAttribute('data-collection-id');
-            const targetCollection = allCollections.find(c => c.id === collectionId);
+        if (targetCollection && data.url) {
+          // 创建新卡片
+          const newCard: Card = {
+            id: `card-${Date.now()}`,
+            url: data.url,
+            title: data.title || '无标题',
+            favicon: data.favIconUrl,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
 
-            if (targetCollection && data.url) {
-              // 创建新卡片
-              const newCard: Card = {
-                id: `card-${Date.now()}`,
-                url: data.url,
-                title: data.title || '无标题',
-                favicon: data.favIconUrl,
-                createdAt: Date.now(),
-                updatedAt: Date.now()
-              };
+          // 添加到目标 Collection
+          const updatedCollection = {
+            ...targetCollection,
+            cards: [...targetCollection.cards, newCard],
+            updatedAt: Date.now()
+          };
 
-              // 添加到目标 Collection
-              const updatedCollection = {
-                ...targetCollection,
-                cards: [...targetCollection.cards, newCard],
-                updatedAt: Date.now()
-              };
+          const newCollections = allCollections.map(c =>
+            c.id === targetCollection.id ? updatedCollection : c
+          );
 
-              const newCollections = allCollections.map(c =>
-                c.id === targetCollection.id ? updatedCollection : c
-              );
-
-              onCollectionsChange(newCollections);
-
-              // 关闭原始标签页
-              if (data.tabId) {
-                await chrome.tabs.remove(data.tabId);
-                // 通知父组件刷新窗口列表
-                onTabDropped?.(data.tabId);
-              }
-            }
+          // 使用防抖机制：200ms 后才触发存储
+          if (dragTimeoutRef.current) {
+            clearTimeout(dragTimeoutRef.current);
           }
+
+          dragTimeoutRef.current = setTimeout(() => {
+            // Step 4: updateState - 异步处理数据更新
+            onCollectionsChange(newCollections);
+
+            // 关闭原始标签页（异步）
+            if (data.tabId && typeof data.tabId === 'number') {
+              chrome.tabs.remove(data.tabId).catch(() => {});
+              onTabDropped?.(data.tabId);
+            }
+          }, 200);
         }
-      } catch (err) {
-        console.error('Drop error:', err);
       }
-    };
-
-    document.addEventListener('dragover', handleDragOver);
-    document.addEventListener('drop', handleDrop);
-
-    return () => {
-      document.removeEventListener('dragover', handleDragOver);
-      document.removeEventListener('drop', handleDrop);
-    };
+    } catch (err) {
+      console.error('Drop error:', err);
+      // 确保即使发生错误也停止传播
+      e.stopPropagation();
+    } finally {
+      // 清理状态
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (dragTimeoutRef.current) {
+        clearTimeout(dragTimeoutRef.current);
+        dragTimeoutRef.current = null;
+      }
+      isDraggingFromRightRef.current = false;
+    }
   }, [allCollections, onCollectionsChange, onTabDropped]);
 
+  // 清理函数
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
+      if (dragTimeoutRef.current) {
+        clearTimeout(dragTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 10 // 需要移动 10px 才能激活拖拽
+      }
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates
     })
@@ -898,55 +671,16 @@ export default function MainContent({
     setActiveId(event.active.id as string);
   };
 
-  const handleDragOver = (event: { over: { id: string } | null }) => {
-    setOverId(event.over?.id || null);
+  const handleDragOver = (event: { over: { id: string | number } | null }) => {
+    if (event.over) {
+      setOverId(event.over.id?.toString() || null);
+    } else {
+      setOverId(null);
+    }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-
-    // 处理从右侧面板拖入的标签页
-    if (over && active.data.current?.type === 'tab') {
-      const tab = active.data.current.tab;
-      const collectionId = over.id.toString().replace('drop-', '');
-      const targetCollection = allCollections.find(c => c.id === collectionId);
-
-      if (targetCollection && tab) {
-        // 创建新卡片
-        const newCard: Card = {
-          id: `card-${Date.now()}`,
-          url: tab.url,
-          title: tab.title || '无标题',
-          favicon: tab.favIconUrl,
-          createdAt: Date.now(),
-          updatedAt: Date.now()
-        };
-
-        // 添加到目标 Collection
-        const updatedCollection = {
-          ...targetCollection,
-          cards: [...targetCollection.cards, newCard],
-          updatedAt: Date.now()
-        };
-
-        const newCollections = allCollections.map(c =>
-          c.id === targetCollection.id ? updatedCollection : c
-        );
-
-        onCollectionsChange(newCollections);
-
-        // 关闭原始标签页
-        if (tab.id) {
-          chrome.tabs.remove(tab.id);
-          // 通知父组件刷新窗口列表
-          onTabDropped?.(tab.id);
-        }
-
-        setActiveId(null);
-        setOverId(null);
-        return;
-      }
-    }
 
     // 处理卡片的跨集合拖拽
     if (over && active.data.current?.type === 'card') {
@@ -1203,7 +937,7 @@ export default function MainContent({
 
       if (tabs.length > 0) {
         // 如果标签页已打开，提取内容
-        content = await extractPageContent(tabs[0].id);
+        content = await extractPageContent(tabs[0].id || 0);
       }
 
       let result: AIAnalysisResult;
@@ -1328,6 +1062,7 @@ export default function MainContent({
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
+          autoScroll={false}
         >
           <SortableContext
             items={collections.map(c => c.id)}
@@ -1346,6 +1081,8 @@ export default function MainContent({
                   onMoveCard={handleMoveCard}
                   onAICard={handleAICard}
                   isOver={overId === collection.id}
+                  viewMode={viewMode}
+                  onDrop={handleExternalDrop}
                 />
               ))}
             </div>

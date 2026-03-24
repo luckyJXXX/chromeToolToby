@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChromeWindow, ChromeTab, Collection } from '../types';
-import { getAllWindows, closeTab } from '../utils/chrome';
+import { closeTab } from '../utils/chrome';
 import {
   RefreshCw,
   X,
@@ -16,7 +16,7 @@ interface RightPanelProps {
   windows: ChromeWindow[];
   onRefresh: () => void;
   collections: Collection[];
-  onDropTab: (tab: ChromeTab, collectionId: string) => void;
+  onDropTab?: (tab: ChromeTab, collectionId: string) => void;
 }
 
 // 可拖拽的标签页项
@@ -69,9 +69,9 @@ export default function RightPanel({
   windows,
   onRefresh,
   collections,
-  onDropTab
+  onDropTab: _onDropTab
 }: RightPanelProps) {
-  const [draggingTab, setDraggingTab] = useState<ChromeTab | null>(null);
+  const [, setDraggingTab] = useState<ChromeTab | null>(null);
   const [savedWindowId, setSavedWindowId] = useState<number | null>(null);
   const [showSaveMenu, setShowSaveMenu] = useState<number | null>(null);
 

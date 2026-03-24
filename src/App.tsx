@@ -14,6 +14,16 @@ function App() {
   const [activeSpaceId, setActiveSpaceId] = useState<string>('default');
   const [windows, setWindows] = useState<ChromeWindow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // 模态框状态控制
+  const [modalStates, setModalStates] = useState({
+    addCardTo: null as string | null,
+    editingCard: null as { card: Card; collectionId: string } | null,
+    movingCard: null as { card: Card; collectionId: string } | null,
+    aiResult: null as unknown as { card: Card; collectionId: string } | null,
+    searchFocused: false
+  });
 
   // 刷新窗口数据
   const refreshWindows = useCallback(async () => {
@@ -68,7 +78,7 @@ function App() {
       const state = await getAppState();
       setSpaces(state.spaces);
       setCollections(state.collections);
-      setActiveSpaceId(state.activeSpaceId);
+      setActiveSpaceId(state.activeSpaceId || 'default');
 
       await refreshWindows();
       setIsLoading(false);
@@ -90,6 +100,47 @@ function App() {
       clearInterval(interval);
     };
   }, [refreshWindows]);
+
+  // 键盘快捷键
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape: 关闭所有模态框
+      if (e.key === 'Escape') {
+        setModalStates(prev => ({
+          ...prev,
+          addCardTo: null,
+          editingCard: null,
+          movingCard: null,
+          aiResult: null
+        }));
+      }
+
+      // Ctrl+B: 切换侧边栏
+      if (e.ctrlKey && e.key === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed(prev => !prev);
+      }
+
+      // Ctrl+Shift+F: 聚焦搜索框
+      if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        setModalStates(prev => ({ ...prev, searchFocused: true }));
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // 切换 Space 时重新加载数据，确保数据最新
+  useEffect(() => {
+    const reloadData = async () => {
+      const state = await getAppState();
+      setSpaces(state.spaces);
+      setCollections(state.collections);
+    };
+    reloadData();
+  }, [activeSpaceId]);
 
   // 切换 Space
   const handleSpaceChange = (spaceId: string) => {
@@ -117,16 +168,31 @@ function App() {
     ? collections
     : collections.filter(c => c.spaceId === activeSpaceId);
 
+  // 模态框控制函数
+  const handleModalAddCardChange = (collectionId: string | null) => {
+    setModalStates(prev => ({ ...prev, addCardTo: collectionId }));
+  };
+
+  const handleModalEditingCardChange = (card: { card: Card; collectionId: string } | null) => {
+    setModalStates(prev => ({ ...prev, editingCard: card }));
+  };
+
+  const handleModalMovingCardChange = (card: { card: Card; collectionId: string } | null) => {
+    setModalStates(prev => ({ ...prev, movingCard: card }));
+  };
+
   return (
     <div className="h-screen flex bg-dark-950 overflow-hidden">
       {/* 左侧边栏 - Spaces 导航 */}
-      <Sidebar
-        spaces={spaces}
-        activeSpaceId={activeSpaceId}
-        onSpaceChange={handleSpaceChange}
-        onSpacesChange={setSpaces}
-        collections={collections}
-      />
+      <div className={`transition-all duration-300 ${sidebarCollapsed ? 'w-0 overflow-hidden' : ''}`}>
+        <Sidebar
+          spaces={spaces}
+          activeSpaceId={activeSpaceId}
+          onSpaceChange={handleSpaceChange}
+          onSpacesChange={setSpaces}
+          collections={collections}
+        />
+      </div>
 
       {/* 中间主内容区 - Collections 和 Cards */}
       <MainContent
@@ -136,6 +202,12 @@ function App() {
         allCollections={collections}
         spaces={spaces}
         onTabDropped={() => refreshWindows()}
+        modalAddCardTo={modalStates.addCardTo}
+        onModalAddCardChange={handleModalAddCardChange}
+        modalEditingCard={modalStates.editingCard}
+        onModalEditingCardChange={handleModalEditingCardChange}
+        modalMovingCard={modalStates.movingCard}
+        onModalMovingCardChange={handleModalMovingCardChange}
       />
 
       {/* 右侧边栏 - 当前打开的标签页 */}

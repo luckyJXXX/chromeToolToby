@@ -14,7 +14,11 @@ import {
   MoreVertical,
   Trash2,
   Folder,
-  GripVertical
+  GripVertical,
+  ExternalLink,
+  Filter,
+  Download,
+  Upload
 } from 'lucide-react';
 import { getMiniMaxApiKey, setMiniMaxApiKey } from '../utils/ai';
 
@@ -24,6 +28,7 @@ interface SidebarProps {
   onSpaceChange: (spaceId: string) => void;
   onSpacesChange?: (spaces: Space[]) => void;
   collections: Collection[];
+  onSearchResults?: (results: Array<{ url: string; title: string; collectionId: string; collectionName: string; spaceName: string }>) => void;
 }
 
 interface DefaultLink {
@@ -37,14 +42,17 @@ export default function Sidebar({
   activeSpaceId,
   onSpaceChange,
   onSpacesChange,
-  collections
+  collections,
+  onSearchResults
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<{ url: string; title: string; collectionId: string; collectionName: string; spaceName: string }>>([]);
   const [showAddSpace, setShowAddSpace] = useState(false);
   const [newSpaceName, setNewSpaceName] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [savingKey, setSavingKey] = useState(false);
+  const [stats, setStats] = useState({ spaces: 0, collections: 0, cards: 0 });
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set());
   const [spaceMenuOpen, setSpaceMenuOpen] = useState<string | null>(null);
   const [draggedSpace, setDraggedSpace] = useState<Space | null>(null);
@@ -55,6 +63,42 @@ export default function Sidebar({
     { id: 'unread', name: '稍后阅读', icon: <Clock size={18} /> },
     { id: 'favorites', name: '我的收藏', icon: <Star size={18} /> },
   ];
+
+  // 搜索功能
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      onSearchResults?.([]);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const results: Array<{ url: string; title: string; collectionId: string; collectionName: string; spaceName: string }> = [];
+
+    for (const collection of collections) {
+      const space = spaces.find(s => s.id === collection.spaceId);
+      const spaceName = space?.name || '默认空间';
+
+      for (const card of collection.cards) {
+        if (
+          card.title.toLowerCase().includes(query) ||
+          card.url.toLowerCase().includes(query) ||
+          (card.description?.toLowerCase().includes(query))
+        ) {
+          results.push({
+            url: card.url,
+            title: card.title,
+            collectionId: collection.id,
+            collectionName: collection.name,
+            spaceName
+          });
+        }
+      }
+    }
+
+    setSearchResults(results.slice(0, 20)); // 限制显示20条
+    onSearchResults?.(results);
+  }, [searchQuery, collections, spaces]);
 
   // 处理默认链接点击 - 显示所有收藏的卡片
   const handleDefaultLinkClick = (linkId: string) => {
@@ -71,16 +115,29 @@ export default function Sidebar({
     }
   };
 
-  // 加载 API Key
+  // 加载 API Key 和统计数据
   useEffect(() => {
-    const loadApiKey = async () => {
+    const loadData = async () => {
       const key = await getMiniMaxApiKey();
       if (key) {
         setApiKey(key);
       }
+
+      // 加载统计数据
+      const spacesData = await chrome.storage.local.get('toby_spaces');
+      const collectionsData = await chrome.storage.local.get('toby_collections');
+      const spaces = spacesData.toby_spaces || [];
+      const collections = collectionsData.toby_collections || [];
+      const cards = collections.reduce((sum: number, c: Collection) => sum + c.cards.length, 0);
+
+      setStats({
+        spaces: spaces.length,
+        collections: collections.length,
+        cards
+      });
     };
     if (showSettings) {
-      loadApiKey();
+      loadData();
     }
   }, [showSettings]);
 
@@ -95,6 +152,78 @@ export default function Sidebar({
       console.error('保存 API Key 失败:', error);
     }
     setSavingKey(false);
+  };
+
+  // 导出数据
+  const handleExportData = async (format: 'json' | 'csv') => {
+    const spacesData = await chrome.storage.local.get('toby_spaces');
+    const collectionsData = await chrome.storage.local.get('toby_collections');
+
+    const data = {
+      spaces: spacesData.toby_spaces || [],
+      collections: collectionsData.toby_collections || [],
+      exportedAt: new Date().toISOString(),
+      version: '1.0'
+    };
+
+    let blob: Blob;
+    let filename: string;
+    const timestamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'json') {
+      blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      filename = `toby-backup-${timestamp}.json`;
+    } else {
+      // CSV format - flatten cards
+      const rows = ['title,url,description,collection,space,createdAt'];
+      for (const collection of data.collections) {
+        const space = data.spaces.find((s: Space) => s.id === collection.spaceId);
+        const spaceName = space?.name || '默认空间';
+        for (const card of collection.cards) {
+          const title = (card.title || '').replace(/"/g, '""');
+          const description = (card.description || '').replace(/"/g, '""');
+          rows.push(`"${title}","${card.url}","${description}","${collection.name}","${spaceName}","${card.createdAt}"`);
+        }
+      }
+      blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+      filename = `toby-backup-${timestamp}.csv`;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // 导入数据
+  const handleImportData = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        if (data.spaces) {
+          await chrome.storage.local.set({ toby_spaces: data.spaces });
+        }
+        if (data.collections) {
+          await chrome.storage.local.set({ toby_collections: data.collections });
+        }
+
+        window.location.reload();
+      } catch (error) {
+        console.error('导入失败:', error);
+        alert('导入失败，请检查文件格式');
+      }
+    };
+    input.click();
   };
 
   // 切换 Space 展开/折叠
@@ -222,12 +351,37 @@ export default function Sidebar({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-500" size={16} />
           <input
             type="text"
-            placeholder="搜索..."
+            placeholder="搜索收藏..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-dark-800 border border-dark-700 rounded-lg pl-10 pr-4 py-2 text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500"
           />
         </div>
+        {/* 搜索结果 */}
+        {searchResults.length > 0 && (
+          <div className="mt-2 max-h-64 overflow-y-auto bg-dark-800 border border-dark-700 rounded-lg">
+            <div className="px-3 py-2 text-xs text-dark-500 border-b border-dark-700 flex items-center gap-1">
+              <Filter size={12} />
+              找到 {searchResults.length} 个结果
+            </div>
+            {searchResults.map((result, index) => (
+              <button
+                key={index}
+                onClick={() => {
+                  chrome.tabs.create({ url: result.url });
+                  setSearchQuery('');
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-dark-700 border-b border-dark-700 last:border-0"
+              >
+                <ExternalLink size={12} className="text-dark-500 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-dark-300 truncate">{result.title}</div>
+                  <div className="text-xs text-dark-500 truncate">{result.spaceName} / {result.collectionName}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 默认快捷链接 */}
@@ -424,6 +578,78 @@ export default function Sidebar({
               >
                 {savingKey ? '保存中...' : '保存 API Key'}
               </button>
+            </div>
+
+            {/* 统计信息 */}
+            <div className="mb-4 pt-4 border-t border-dark-700">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-medium text-dark-300">数据统计</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-dark-700 rounded-lg p-3 text-center">
+                  <div className="text-xl font-bold text-indigo-400">{stats.spaces}</div>
+                  <div className="text-xs text-dark-500">Spaces</div>
+                </div>
+                <div className="bg-dark-700 rounded-lg p-3 text-center">
+                  <div className="text-xl font-bold text-indigo-400">{stats.collections}</div>
+                  <div className="text-xs text-dark-500">Collections</div>
+                </div>
+                <div className="bg-dark-700 rounded-lg p-3 text-center">
+                  <div className="text-xl font-bold text-indigo-400">{stats.cards}</div>
+                  <div className="text-xs text-dark-500">Cards</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 数据导出/导入 */}
+            <div className="mb-4 pt-4 border-t border-dark-700">
+              <div className="flex items-center gap-2 mb-2">
+                <Download size={16} className="text-indigo-400" />
+                <span className="text-sm font-medium text-dark-300">数据备份</span>
+              </div>
+              <p className="text-xs text-dark-500 mb-3">
+                导出您的收藏数据为 JSON 或 CSV 格式，也可以从备份文件导入。
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleExportData('json')}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm"
+                >
+                  <Download size={14} />
+                  导出 JSON
+                </button>
+                <button
+                  onClick={() => handleExportData('csv')}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm"
+                >
+                  <Download size={14} />
+                  导出 CSV
+                </button>
+                <button
+                  onClick={handleImportData}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm"
+                >
+                  <Upload size={14} />
+                  导入
+                </button>
+              </div>
+            </div>
+
+            {/* 快捷键提示 */}
+            <div className="pt-4 border-t border-dark-700">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-medium text-dark-300">快捷键</span>
+              </div>
+              <div className="space-y-1 text-xs text-dark-500">
+                <div className="flex justify-between">
+                  <span>切换侧边栏</span>
+                  <kbd className="px-1.5 py-0.5 bg-dark-700 rounded text-dark-400">Ctrl+B</kbd>
+                </div>
+                <div className="flex justify-between">
+                  <span>关闭弹窗</span>
+                  <kbd className="px-1.5 py-0.5 bg-dark-700 rounded text-dark-400">Esc</kbd>
+                </div>
+              </div>
             </div>
           </div>
         </div>

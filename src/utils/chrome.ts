@@ -5,15 +5,15 @@ export async function getAllWindows(): Promise<ChromeWindow[]> {
   return new Promise((resolve) => {
     chrome.windows.getAll({ populate: true }, (windows) => {
       const result: ChromeWindow[] = windows
-        .filter(w => w.type === 'normal')
+        .filter(w => w.type === 'normal' && w.id !== undefined)
         .map(w => ({
-          id: w.id,
+          id: w.id!,
           focused: w.focused,
           incognito: w.incognito,
           type: w.type as 'normal' | 'popup' | 'devtools',
           tabs: (w.tabs || []).map(t => ({
             id: t.id!,
-            windowId: w.id,
+            windowId: w.id!,
             title: t.title || '无标题',
             url: t.url || '',
             favIconUrl: t.favIconUrl,
