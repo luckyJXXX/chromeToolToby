@@ -743,19 +743,22 @@ export default function MainContent({
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
-    const newCollections = [...collections, newCollection];
+    // 使用 allCollections 而不是 collections，避免数据丢失
+    const newCollections = [...allCollections, newCollection];
     onCollectionsChange(newCollections);
   };
 
   const handleUpdateCollection = (updated: Collection) => {
-    const newCollections = collections.map(c =>
+    // 使用 allCollections 而不是 collections，避免数据丢失
+    const newCollections = allCollections.map(c =>
       c.id === updated.id ? updated : c
     );
     onCollectionsChange(newCollections);
   };
 
   const handleDeleteCollection = (collectionId: string) => {
-    const newCollections = collections.filter(c => c.id !== collectionId);
+    // 使用 allCollections 而不是 collections，避免数据丢失
+    const newCollections = allCollections.filter(c => c.id !== collectionId);
     onCollectionsChange(newCollections);
   };
 
