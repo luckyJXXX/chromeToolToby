@@ -119,17 +119,17 @@ async function runTests() {
   }
   console.log('');
 
-  // Test 5: DndContext Configuration
-  console.log('【Test 5】DndContext Configuration');
+  // Test 5: Native Drag Implementation (instead of dnd-kit)
+  console.log('【Test 5】Native HTML5 Drag Implementation');
   console.log('-'.repeat(50));
   try {
     const mainContent = readFileSync(join(PROJECT_ROOT, 'src/components/MainContent.tsx'), 'utf-8');
 
     const tests = [
-      { name: 'DndContext present', pattern: 'DndContext' },
-      { name: 'autoScroll disabled', pattern: 'autoScroll={false}' },
-      { name: 'PointerSensor with distance', pattern: 'activationConstraint' },
-      { name: 'SortableContext present', pattern: 'SortableContext' },
+      { name: 'Document-level dragover listener', pattern: "document.addEventListener('dragover'" },
+      { name: 'Document-level drop listener', pattern: "document.addEventListener('drop'" },
+      { name: 'Native onDragOver handler', pattern: 'onDragOver' },
+      { name: 'Native onDrop handler', pattern: 'onDrop' },
     ];
 
     for (const test of tests) {
@@ -195,9 +195,9 @@ async function runTests() {
     const mainContent = readFileSync(join(PROJECT_ROOT, 'src/components/MainContent.tsx'), 'utf-8');
 
     const tests = [
-      { name: 'Try-catch in handleTabDrop', pattern: 'try {' },
+      { name: 'Try-catch in handleExternalDrop', pattern: 'try {' },
       { name: 'dataTransfer null check', pattern: 'e.dataTransfer?.getData' },
-      { name: 'dataStr null check', pattern: 'if (!dataStr) return' },
+      { name: 'dataStr null check', pattern: 'if (!dataStr)' },
       { name: 'JSON parse in try-catch', pattern: 'const data = JSON.parse' },
       { name: 'chrome.tabs.remove with catch', pattern: 'chrome.tabs.remove' },
     ];
@@ -217,8 +217,95 @@ async function runTests() {
   }
   console.log('');
 
-  // Test 8: UI Features
-  console.log('【Test 8】Other UI Features');
+  // Test 8: Space Data Persistence
+  console.log('【Test 8】Space Data Persistence');
+  console.log('-'.repeat(50));
+  try {
+    const mainContent = readFileSync(join(PROJECT_ROOT, 'src/components/MainContent.tsx'), 'utf-8');
+    const appContent = readFileSync(join(PROJECT_ROOT, 'src/App.tsx'), 'utf-8');
+
+    const tests = [
+      { name: 'handleAddCollection uses allCollections', pattern: 'allCollections, newCollection', source: mainContent },
+      { name: 'handleDeleteCollection uses allCollections', pattern: 'allCollections.filter', source: mainContent },
+      { name: 'handleUpdateCollection uses allCollections', pattern: 'allCollections.map', source: mainContent },
+      { name: 'App has allCollections prop', pattern: 'allCollections={collections}', source: appContent },
+    ];
+
+    for (const test of tests) {
+      if (test.source.includes(test.pattern)) {
+        console.log(`  ✓ ${test.name}`);
+        passed++;
+      } else {
+        console.log(`  ✗ ${test.name} MISSING`);
+        failed++;
+      }
+    }
+  } catch (error) {
+    console.log(`  ✗ Error: ${error.message}`);
+    failed++;
+  }
+  console.log('');
+
+  // Test 9: Drag Target Collection Detection
+  console.log('【Test 9】Drag Target Collection Detection');
+  console.log('-'.repeat(50));
+  try {
+    const mainContent = readFileSync(join(PROJECT_ROOT, 'src/components/MainContent.tsx'), 'utf-8');
+
+    const tests = [
+      { name: 'Uses closest to find target collection', pattern: "closest('[data-collection-id]')" },
+      { name: 'Gets collection ID from attribute', pattern: 'getAttribute' },
+      { name: 'Falls back to first collection', pattern: 'collections[0].id' },
+    ];
+
+    for (const test of tests) {
+      if (mainContent.includes(test.pattern)) {
+        console.log(`  ✓ ${test.name}`);
+        passed++;
+      } else {
+        console.log(`  ✗ ${test.name} MISSING`);
+        failed++;
+      }
+    }
+  } catch (error) {
+    console.log(`  ✗ Error: ${error.message}`);
+    failed++;
+  }
+  console.log('');
+
+  // Test 10: RightPanel Drag Data
+  console.log('【Test 10】RightPanel Drag Data');
+  console.log('-'.repeat(50));
+  try {
+    const rightPanel = readFileSync(join(PROJECT_ROOT, 'src/components/RightPanel.tsx'), 'utf-8');
+
+    const tests = [
+      { name: 'Sets tab data with type', pattern: "type: 'tab'" },
+      { name: 'Sets tabId in data', pattern: 'tabId: tab.id' },
+      { name: 'Sets url in data', pattern: 'url: tab.url' },
+      { name: 'Sets title in data', pattern: 'title: tab.title' },
+      { name: 'Sets favIconUrl in data', pattern: 'favIconUrl: tab.favIconUrl' },
+      { name: 'Sets effectAllowed to move', pattern: "effectAllowed = 'move'" },
+      { name: 'Console log for debugging', pattern: "console.log('[DragStart]" },
+    ];
+
+    for (const test of tests) {
+      if (rightPanel.includes(test.pattern)) {
+        console.log(`  ✓ ${test.name}`);
+        passed++;
+      } else {
+        console.log(`  ✗ ${test.name} MISSING`);
+        failed++;
+      }
+    }
+  } catch (error) {
+    console.log(`  ✗ Error: ${error.message}`);
+    failed++;
+  }
+  console.log('');
+
+  // Test 11: UI Features
+  console.log('【Test 11】Other UI Features');
   console.log('-'.repeat(50));
   try {
     const mainContent = readFileSync(join(PROJECT_ROOT, 'src/components/MainContent.tsx'), 'utf-8');
@@ -247,8 +334,8 @@ async function runTests() {
   }
   console.log('');
 
-  // Test 9: Popup.js Drag & Drop
-  console.log('【Test 9】Popup.js Drag & Drop');
+  // Test 12: Popup.js Drag & Drop
+  console.log('【Test 12】Popup.js Drag & Drop');
   console.log('-'.repeat(50));
   try {
     const popup = readFileSync(join(PROJECT_ROOT, 'popup/popup.js'), 'utf-8');

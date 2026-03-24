@@ -1069,7 +1069,7 @@ export default function MainContent({
           console.log('[MainContent] DragEnter fired');
           e.preventDefault();
         }}
-        onDragLeave={(e) => {
+        onDragLeave={(_e) => {
           console.log('[MainContent] DragLeave fired');
         }}
         onDrop={(e) => {
