@@ -24,6 +24,7 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   Grid3X3,
   List,
+  PanelLeft,
   ChevronDown,
   ChevronRight,
   Plus,
@@ -261,12 +262,16 @@ function SortableCollection({
               拖拽标签页到这里保存
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
+            <div className={`grid gap-2 ${
+              viewMode === 'compact' ? 'grid-cols-5' :
+              viewMode === 'list' ? 'grid-cols-1' : 'grid-cols-2'
+            }`}>
               {collection.cards.map((card) => (
                 <CardItem
                   key={card.id}
                   card={card}
                   collectionId={collection.id}
+                  viewMode={viewMode}
                   onDelete={() => {
                     const updated = {
                       ...collection,
@@ -294,7 +299,8 @@ function CardItem({
   onDelete,
   onEdit,
   onMove,
-  onAI
+  onAI,
+  viewMode = 'grid'
 }: {
   card: Card;
   collectionId: string;
@@ -302,7 +308,9 @@ function CardItem({
   onEdit: (card: Card) => void;
   onMove: (card: Card) => void;
   onAI?: (card: Card) => void;
+  viewMode?: 'grid' | 'list' | 'compact';
 }) {
+  const isCompact = viewMode === 'compact';
   const [showMenu, setShowMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [copied, setCopied] = useState(false);
@@ -367,25 +375,31 @@ function CardItem({
       style={style}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
-      className="flex items-center gap-2 p-2 bg-dark-800 hover:bg-dark-700 rounded-lg group cursor-pointer transition-colors"
+      className={`flex items-center gap-2 bg-dark-800 hover:bg-dark-700 rounded-lg group cursor-pointer transition-colors ${
+        isCompact ? 'p-1' : 'p-2'
+      }`}
     >
       {/* 拖拽手柄区域 */}
       <div
         ref={setDragRef}
         {...attributes}
         {...listeners}
-        className="flex items-center gap-2 flex-1 min-w-0"
+        className={`flex items-center gap-2 flex-1 min-w-0 ${isCompact ? '' : ''}`}
       >
-        <div className="w-5 h-5 flex-shrink-0">
+        <div className={`flex-shrink-0 ${isCompact ? 'w-4 h-4' : 'w-5 h-5'}`}>
           {card.favicon ? (
             <img src={card.favicon} alt="" className="w-full h-full" />
           ) : (
-            <div className="w-full h-full bg-dark-600 rounded flex items-center justify-center text-[10px] text-dark-300">
+            <div className={`w-full h-full bg-dark-600 rounded flex items-center justify-center text-dark-300 ${
+              isCompact ? 'text-[8px]' : 'text-[10px]'
+            }`}>
               {card.title.charAt(0) || '?'}
             </div>
           )}
         </div>
-        <span className="text-sm text-dark-300 truncate flex-1">{card.title}</span>
+        <span className={`text-dark-300 truncate flex-1 ${
+          isCompact ? 'text-xs' : 'text-sm'
+        }`}>{card.title}</span>
       </div>
       {/* 操作按钮组 */}
       <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-all">
@@ -773,7 +787,7 @@ export default function MainContent({
   spaces,
   onTabDropped
 }: MainContentProps) {
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'compact'>('grid');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [addCardTo, setAddCardTo] = useState<string | null>(null);
@@ -1285,10 +1299,15 @@ export default function MainContent({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+            onClick={() => {
+              if (viewMode === 'grid') setViewMode('list');
+              else if (viewMode === 'list') setViewMode('compact');
+              else setViewMode('grid');
+            }}
             className="p-2 text-dark-400 hover:text-dark-200 hover:bg-dark-800 rounded-lg"
+            title={viewMode === 'grid' ? '切换到列表视图' : viewMode === 'list' ? '切换到紧凑视图' : '切换到网格视图'}
           >
-            {viewMode === 'grid' ? <List size={18} /> : <Grid3X3 size={18} />}
+            {viewMode === 'grid' ? <Grid3X3 size={18} /> : viewMode === 'list' ? <PanelLeft size={18} /> : <List size={18} />}
           </button>
 
           <button

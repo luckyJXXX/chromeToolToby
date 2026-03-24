@@ -124,6 +124,7 @@ function App() {
         spaces={spaces}
         activeSpaceId={activeSpaceId}
         onSpaceChange={handleSpaceChange}
+        onSpacesChange={setSpaces}
         collections={collections}
       />
 

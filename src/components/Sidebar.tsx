@@ -13,7 +13,8 @@ import {
   Key,
   MoreVertical,
   Trash2,
-  Folder
+  Folder,
+  GripVertical
 } from 'lucide-react';
 import { getMiniMaxApiKey, setMiniMaxApiKey } from '../utils/ai';
 
@@ -21,6 +22,7 @@ interface SidebarProps {
   spaces: Space[];
   activeSpaceId: string;
   onSpaceChange: (spaceId: string) => void;
+  onSpacesChange?: (spaces: Space[]) => void;
   collections: Collection[];
 }
 
@@ -34,6 +36,7 @@ export default function Sidebar({
   spaces,
   activeSpaceId,
   onSpaceChange,
+  onSpacesChange,
   collections
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,6 +47,8 @@ export default function Sidebar({
   const [savingKey, setSavingKey] = useState(false);
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set());
   const [spaceMenuOpen, setSpaceMenuOpen] = useState<string | null>(null);
+  const [draggedSpace, setDraggedSpace] = useState<Space | null>(null);
+  const [dragOverSpace, setDragOverSpace] = useState<string | null>(null);
 
   const defaultLinks: DefaultLink[] = [
     { id: 'all', name: '所有链接', icon: <Layers size={18} /> },
@@ -110,6 +115,56 @@ export default function Sidebar({
   const toggleSpaceMenu = (spaceId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setSpaceMenuOpen(prev => prev === spaceId ? null : spaceId);
+  };
+
+  // Space 拖拽排序
+  const handleDragStart = (e: React.DragEvent, space: Space) => {
+    setDraggedSpace(space);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', space.id);
+  };
+
+  const handleDragOver = (e: React.DragEvent, spaceId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverSpace(spaceId);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverSpace(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetSpace: Space) => {
+    e.preventDefault();
+    if (!draggedSpace || draggedSpace.id === targetSpace.id) {
+      setDraggedSpace(null);
+      setDragOverSpace(null);
+      return;
+    }
+
+    const draggedIndex = spaces.findIndex(s => s.id === draggedSpace.id);
+    const targetIndex = spaces.findIndex(s => s.id === targetSpace.id);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedSpace(null);
+      setDragOverSpace(null);
+      return;
+    }
+
+    const newSpaces = [...spaces];
+    newSpaces.splice(draggedIndex, 1);
+    newSpaces.splice(targetIndex, 0, draggedSpace);
+
+    chrome.storage.local.set({ toby_spaces: newSpaces });
+    onSpacesChange?.(newSpaces);
+
+    setDraggedSpace(null);
+    setDragOverSpace(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedSpace(null);
+    setDragOverSpace(null);
   };
 
   // 删除 Space
@@ -234,17 +289,31 @@ export default function Sidebar({
         {spaces.map((space) => {
           const collectionCount = collections.filter(c => c.spaceId === space.id).length;
           const isExpanded = expandedSpaces.has(space.id);
+          const isDragOver = dragOverSpace === space.id && draggedSpace?.id !== space.id;
+
           return (
-            <div key={space.id} className="relative">
-              <button
+            <div
+              key={space.id}
+              className={`relative ${isDragOver ? 'border-t-2 border-indigo-500' : ''}`}
+              onDragOver={(e) => handleDragOver(e, space.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, space)}
+            >
+              <div
+                draggable
+                onDragStart={(e) => handleDragStart(e, space)}
+                onDragEnd={handleDragEnd}
                 onClick={() => onSpaceChange(space.id)}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors cursor-grab active:cursor-grabbing ${
+                  draggedSpace?.id === space.id ? 'opacity-50' : ''
+                } ${
                   activeSpaceId === space.id
                     ? 'bg-indigo-600/20 text-indigo-400'
                     : 'text-dark-300 hover:bg-dark-800 hover:text-dark-100'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <GripVertical size={14} className="text-dark-600 flex-shrink-0" />
                   <div className="w-6 h-6 rounded bg-dark-800 flex items-center justify-center text-xs font-medium">
                     {space.name.charAt(0)}
                   </div>
@@ -269,7 +338,7 @@ export default function Sidebar({
                     <MoreVertical size={14} className="text-dark-500" />
                   </button>
                 </div>
-              </button>
+              </div>
 
               {/* Space 操作菜单 */}
               {spaceMenuOpen === space.id && !space.isDefault && (
