@@ -291,10 +291,13 @@ function CardItem({
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [copied, setCopied] = useState(false);
 
-  // 拖拽功能
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  // 拖拽功能 - 使用 activationConstraint 让拖拽需要移动 5px 才能激活
+  const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({
     id: card.id,
-    data: { type: 'card', card, sourceCollectionId: collectionId }
+    data: { type: 'card', card, sourceCollectionId: collectionId },
+    activationConstraint: {
+      distance: 5
+    }
   });
 
   const style = transform ? {
@@ -305,11 +308,13 @@ function CardItem({
 
   // 处理打开链接
   const handleClick = (e: React.MouseEvent) => {
+    // 如果正在拖拽，不触发点击
+    if (isDragging) return;
+
     if (showMenu) {
       setShowMenu(false);
       return;
     }
-    e.preventDefault();
     chrome.tabs.create({ url: card.url });
   };
 
@@ -331,7 +336,6 @@ function CardItem({
 
   return (
     <div
-      ref={setNodeRef}
       style={style}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
@@ -339,6 +343,7 @@ function CardItem({
     >
       {/* 拖拽手柄区域 */}
       <div
+        ref={setDragRef}
         {...attributes}
         {...listeners}
         className="flex items-center gap-2 flex-1 min-w-0"
