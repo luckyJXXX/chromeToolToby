@@ -42,8 +42,7 @@ import {
   Unlink,
   Sparkles,
   Loader2,
-  Settings,
-  Key
+  Settings
 } from 'lucide-react';
 import { saveCollections } from '../utils/storage';
 import { getMiniMaxApiKey, setMiniMaxApiKey, analyzeContent, AIAnalysisResult } from '../utils/ai';
@@ -53,6 +52,7 @@ interface MainContentProps {
   onCollectionsChange: (collections: Collection[]) => void;
   activeSpace?: Space;
   allCollections: Collection[];
+  spaces?: Space[];
   onTabDropped?: (tabId: number) => void;
 }
 
@@ -82,6 +82,17 @@ function SortableCollection({
   const [showMenu, setShowMenu] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(collection.name);
+
+  // 监听全局菜单切换事件，关闭其他菜单
+  useEffect(() => {
+    const handleToggleMenu = (e: CustomEvent<{ menuId: string }>) => {
+      if (e.detail.menuId !== collection.id && showMenu) {
+        setShowMenu(false);
+      }
+    };
+    window.addEventListener('toggle-menu' as keyof WindowEventMap, handleToggleMenu as EventListener);
+    return () => window.removeEventListener('toggle-menu' as keyof WindowEventMap, handleToggleMenu as EventListener);
+  }, [collection.id, showMenu]);
 
   const {
     attributes,
@@ -178,7 +189,11 @@ function SortableCollection({
 
         <div className="relative">
           <button
-            onClick={() => setShowMenu(!showMenu)}
+            onClick={(e) => {
+              e.stopPropagation();
+              window.dispatchEvent(new CustomEvent('toggle-menu', { detail: { menuId: collection.id } }));
+              setShowMenu(!showMenu);
+            }}
             className="p-1.5 text-dark-400 hover:text-dark-200 hover:bg-dark-700 rounded"
           >
             <MoreVertical size={16} />
@@ -291,6 +306,17 @@ function CardItem({
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [copied, setCopied] = useState(false);
 
+  // 监听全局菜单切换事件，关闭其他菜单
+  useEffect(() => {
+    const handleToggleMenu = (e: CustomEvent<{ menuId: string }>) => {
+      if (e.detail.menuId !== card.id && showMenu) {
+        setShowMenu(false);
+      }
+    };
+    window.addEventListener('toggle-menu' as keyof WindowEventMap, handleToggleMenu as EventListener);
+    return () => window.removeEventListener('toggle-menu' as keyof WindowEventMap, handleToggleMenu as EventListener);
+  }, [card.id, showMenu]);
+
   // 拖拽功能 - 使用 activationConstraint 让拖拽需要移动 5px 才能激活
   const { attributes, listeners, setNodeRef: setDragRef, transform, isDragging } = useDraggable({
     id: card.id,
@@ -322,6 +348,7 @@ function CardItem({
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     setMenuPosition({ x: e.clientX, y: e.clientY });
+    window.dispatchEvent(new CustomEvent('toggle-menu', { detail: { menuId: card.id } }));
     setShowMenu(true);
   };
 
@@ -540,18 +567,25 @@ function EditCardModal({
   card,
   onClose,
   onSave,
-  onDelete
+  onDelete,
+  allCollections,
+  currentCollectionId,
+  spaces
 }: {
   isOpen: boolean;
   card: Card | null;
   onClose: () => void;
-  onSave: (url: string, title: string, description?: string, shortUrl?: string) => void;
+  onSave: (url: string, title: string, description?: string, shortUrl?: string, targetCollectionId?: string) => void;
   onDelete?: () => void;
+  allCollections?: Collection[];
+  currentCollectionId?: string;
+  spaces?: Space[];
 }) {
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [shortUrl, setShortUrl] = useState('');
+  const [targetCollectionId, setTargetCollectionId] = useState(currentCollectionId || '');
 
   useEffect(() => {
     if (card) {
@@ -559,17 +593,24 @@ function EditCardModal({
       setTitle(card.title);
       setDescription(card.description || '');
       setShortUrl(card.shortUrl || '');
+      setTargetCollectionId(currentCollectionId || '');
     }
-  }, [card]);
+  }, [card, currentCollectionId]);
 
   if (!isOpen || !card) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (url.trim()) {
-      onSave(url, title || url, description, shortUrl);
+      onSave(url, title || url, description, shortUrl, targetCollectionId !== currentCollectionId ? targetCollectionId : undefined);
       onClose();
     }
+  };
+
+  // 获取集合所在的空间名称
+  const getSpaceName = (collection: Collection) => {
+    const space = spaces?.find(s => s.id === collection.spaceId);
+    return space?.name || '默认空间';
   };
 
   return (
@@ -598,6 +639,22 @@ function EditCardModal({
               className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
+          {allCollections && allCollections.length > 0 && (
+            <div className="mb-3">
+              <label className="block text-sm text-dark-400 mb-1">移动到</label>
+              <select
+                value={targetCollectionId}
+                onChange={(e) => setTargetCollectionId(e.target.value)}
+                className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 focus:outline-none focus:border-indigo-500"
+              >
+                {allCollections.map(collection => (
+                  <option key={collection.id} value={collection.id}>
+                    {getSpaceName(collection)} / {collection.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="mb-3">
             <label className="block text-sm text-dark-400 mb-1">描述</label>
             <textarea
@@ -709,80 +766,6 @@ function MoveCardModal({
   );
 }
 
-// API Key 设置弹窗
-function ApiKeyModal({
-  isOpen,
-  onClose
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-}) {
-  const [apiKey, setApiKey] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    const loadApiKey = async () => {
-      const key = await getMiniMaxApiKey();
-      if (key) {
-        setApiKey(key);
-      }
-    };
-    if (isOpen) {
-      loadApiKey();
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleSave = async () => {
-    if (!apiKey.trim()) return;
-    setSaving(true);
-    try {
-      await setMiniMaxApiKey(apiKey.trim());
-      onClose();
-    } catch (error) {
-      console.error('保存 API Key 失败:', error);
-    }
-    setSaving(false);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-dark-800 rounded-xl p-6 w-[420px] border border-dark-700">
-        <div className="flex items-center gap-2 mb-4">
-          <Key size={20} className="text-indigo-400" />
-          <h3 className="text-lg font-medium text-dark-100">MiniMax API 配置</h3>
-        </div>
-        <p className="text-sm text-dark-400 mb-4">
-          请输入您的 MiniMax API Key 以启用 AI 分析功能。
-        </p>
-        <input
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder="sk-xxxxxxxxxxxxxxxx"
-          className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500 mb-4"
-        />
-        <div className="flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 bg-dark-700 text-dark-300 rounded-lg hover:bg-dark-600"
-          >
-            取消
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !apiKey.trim()}
-            className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 disabled:opacity-50"
-          >
-            {saving ? '保存中...' : '保存'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // AI 分析结果弹窗
 function AIResultModal({
   isOpen,
@@ -864,22 +847,30 @@ export default function MainContent({
   onCollectionsChange,
   activeSpace,
   allCollections,
+  spaces,
   onTabDropped
 }: MainContentProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [addCardTo, setAddCardTo] = useState<string | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const mainRef = useRef<HTMLElement>(null);
+
+  // 全局菜单关闭 - 当打开一个新菜单时关闭其他菜单
+  useEffect(() => {
+    const handleMenuToggle = (e: CustomEvent<{ menuId: string }>) => {
+      setMenuOpenId(prev => prev === e.detail.menuId ? null : e.detail.menuId);
+    };
+    window.addEventListener('toggle-menu' as keyof WindowEventMap, handleMenuToggle as EventListener);
+    return () => window.removeEventListener('toggle-menu' as keyof WindowEventMap, handleMenuToggle as EventListener);
+  }, []);
 
   // 编辑卡片状态
   const [editingCard, setEditingCard] = useState<{ card: Card; collectionId: string } | null>(null);
 
   // 移动卡片状态
   const [movingCard, setMovingCard] = useState<{ card: Card; collectionId: string } | null>(null);
-
-  // API Key 设置状态
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
 
   // AI 分析状态
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
@@ -1144,12 +1135,37 @@ export default function MainContent({
     setEditingCard({ card, collectionId });
   };
 
-  const handleSaveEditedCard = (url: string, title: string, description?: string, shortUrl?: string) => {
+  const handleSaveEditedCard = (url: string, title: string, description?: string, shortUrl?: string, targetCollectionId?: string) => {
     if (!editingCard) return;
 
     const { card, collectionId } = editingCard;
-    const targetCollection = allCollections.find(c => c.id === collectionId);
-    if (targetCollection) {
+    const sourceCollection = allCollections.find(c => c.id === collectionId);
+    const targetId = targetCollectionId || collectionId;
+    const targetCollection = allCollections.find(c => c.id === targetId);
+
+    if (!sourceCollection || !targetCollection) return;
+
+    if (targetCollectionId && targetCollectionId !== collectionId) {
+      // 移动到另一个集合
+      const updatedCard = { ...card, url, title, description, shortUrl, updatedAt: Date.now() };
+
+      // 从原集合中移除
+      const newSourceCards = sourceCollection.cards.filter(c => c.id !== card.id);
+      const newSourceCollection = { ...sourceCollection, cards: newSourceCards, updatedAt: Date.now() };
+
+      // 添加到目标集合
+      const newTargetCards = [...targetCollection.cards, updatedCard];
+      const newTargetCollection = { ...targetCollection, cards: newTargetCards, updatedAt: Date.now() };
+
+      const newCollections = allCollections.map(c => {
+        if (c.id === sourceCollection.id) return newSourceCollection;
+        if (c.id === targetCollection.id) return newTargetCollection;
+        return c;
+      });
+
+      onCollectionsChange(newCollections);
+    } else {
+      // 同一集合内编辑
       const updatedCards = targetCollection.cards.map(c =>
         c.id === card.id ? { ...c, url, title, description, shortUrl, updatedAt: Date.now() } : c
       );
@@ -1236,7 +1252,7 @@ export default function MainContent({
   const handleAICard = async (card: Card, collectionId: string) => {
     const apiKey = await getMiniMaxApiKey();
     if (!apiKey) {
-      setShowApiKeyModal(true);
+      alert('请先在左下角"设置"中配置 MiniMax API Key');
       return;
     }
 
@@ -1361,14 +1377,6 @@ export default function MainContent({
             <Plus size={16} />
             添加集合
           </button>
-
-          <button
-            onClick={() => setShowApiKeyModal(true)}
-            className="p-2 text-dark-400 hover:text-dark-200 hover:bg-dark-800 rounded-lg"
-            title="AI 设置"
-          >
-            <Settings size={18} />
-          </button>
         </div>
       </header>
 
@@ -1442,6 +1450,9 @@ export default function MainContent({
         onClose={() => setEditingCard(null)}
         onSave={handleSaveEditedCard}
         onDelete={handleDeleteEditingCard}
+        allCollections={allCollections}
+        currentCollectionId={editingCard?.collectionId}
+        spaces={spaces}
       />
 
       {/* 移动卡片弹窗 */}
@@ -1452,12 +1463,6 @@ export default function MainContent({
         currentCollectionId={movingCard?.collectionId || ''}
         onClose={() => setMovingCard(null)}
         onMove={handleCardMoved}
-      />
-
-      {/* API Key 设置弹窗 */}
-      <ApiKeyModal
-        isOpen={showApiKeyModal}
-        onClose={() => setShowApiKeyModal(false)}
       />
 
       {/* AI 分析结果弹窗 */}

@@ -112,7 +112,10 @@ function App() {
   }
 
   // 获取当前 Space 的 Collections
-  const currentCollections = collections.filter(c => c.spaceId === activeSpaceId);
+  // 'all' 是一个特殊 ID，表示显示所有空间的收藏
+  const currentCollections = activeSpaceId === 'all'
+    ? collections
+    : collections.filter(c => c.spaceId === activeSpaceId);
 
   return (
     <div className="h-screen flex bg-dark-950 overflow-hidden">
@@ -130,6 +133,7 @@ function App() {
         onCollectionsChange={handleCollectionsChange}
         activeSpace={spaces.find(s => s.id === activeSpaceId)}
         allCollections={collections}
+        spaces={spaces}
         onTabDropped={() => refreshWindows()}
       />
 
