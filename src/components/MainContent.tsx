@@ -88,10 +88,9 @@ function SortableCollection({
   // 处理外部拖拽（从右侧面板拖入的标签页）- 使用原生事件
   const handleNativeDragOver = (e: React.DragEvent) => {
     // 调试：打印 dragover
-    console.log('[DragOver] 集合区:', collection.id, collection.name);
+    console.log('[Collection] DragOver:', collection.id);
 
     e.preventDefault();
-    e.stopPropagation();
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'move';
     }
@@ -99,24 +98,23 @@ function SortableCollection({
 
   const handleNativeDragEnter = (_e: React.DragEvent) => {
     // 调试：打印 dragenter
-    console.log('[DragEnter] 进入集合区:', collection.id, collection.name);
+    console.log('[Collection] DragEnter:', collection.id);
   };
 
   const handleNativeDragLeave = (_e: React.DragEvent) => {
     // 调试：打印 dragleave
-    console.log('[DragLeave] 离开集合区:', collection.id, collection.name);
+    console.log('[Collection] DragLeave:', collection.id);
   };
 
   const handleNativeDrop = (e: React.DragEvent) => {
     // 调试：打印 drop
-    console.log('[Drop] 放置到集合区:', collection.id, collection.name);
+    console.log('[Collection] Drop:', collection.id);
 
     e.preventDefault();
-    e.stopPropagation();
 
     // 尝试获取数据
     const dataStr = e.dataTransfer?.getData('text/plain');
-    console.log('[Drop] 获取到的数据:', dataStr);
+    console.log('[Collection] Drop data:', dataStr);
 
     if (onDrop) {
       onDrop(collection.id, e);
@@ -529,6 +527,75 @@ export default function MainContent({
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
   const [aiResultCard, setAiResultCard] = useState<{ card: Card; collectionId: string } | null>(null);
+
+  // 文档级别的拖拽监听 - 确保捕获所有 drop 事件
+  useEffect(() => {
+    const handleDocumentDrop = (e: DragEvent) => {
+      console.log('[Document] Drop event captured');
+      e.preventDefault();
+
+      const dataStr = e.dataTransfer?.getData('text/plain');
+      console.log('[Document] Drop data:', dataStr);
+
+      if (dataStr && collections.length > 0) {
+        try {
+          const data = JSON.parse(dataStr);
+          if (data.type === 'tab') {
+            console.log('[Document] Processing tab drop to first collection');
+            // 默认添加到第一个集合
+            const collectionId = collections[0].id;
+
+            const targetCollection = allCollections.find(c => c.id === collectionId);
+            if (targetCollection && data.url) {
+              const newCard: Card = {
+                id: `card-${Date.now()}`,
+                url: data.url,
+                title: data.title || '无标题',
+                favicon: data.favIconUrl,
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+              };
+
+              const updatedCollection = {
+                ...targetCollection,
+                cards: [...targetCollection.cards, newCard],
+                updatedAt: Date.now()
+              };
+
+              const newCollections = allCollections.map(c =>
+                c.id === targetCollection.id ? updatedCollection : c
+              );
+
+              onCollectionsChange(newCollections);
+              console.log('[Document] Card added successfully');
+
+              // 关闭原始标签页
+              if (data.tabId) {
+                chrome.tabs.remove(data.tabId).catch(() => {});
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[Document] Drop error:', err);
+        }
+      }
+    };
+
+    const handleDocumentDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'move';
+      }
+    };
+
+    document.addEventListener('dragover', handleDocumentDragOver);
+    document.addEventListener('drop', handleDocumentDrop);
+
+    return () => {
+      document.removeEventListener('dragover', handleDocumentDragOver);
+      document.removeEventListener('drop', handleDocumentDrop);
+    };
+  }, [collections, allCollections, onCollectionsChange]);
   const [_aiProgress, setAiProgress] = useState({ current: 0, total: 0 });
 
   // ========== 拖拽状态管理 ==========
@@ -539,22 +606,28 @@ export default function MainContent({
 
   // Step 3: onDrop - 仅提取数据，异步处理更新
   const handleExternalDrop = useCallback(async (collectionId: string, e: React.DragEvent) => {
+    console.log('[handleExternalDrop] Called with collectionId:', collectionId);
     e.preventDefault();
 
     try {
-      // 确保 stopPropagation 被调用
-      e.stopPropagation();
-
       const dataStr = e.dataTransfer?.getData('text/plain');
-      if (!dataStr) return;
+      console.log('[handleExternalDrop] Raw data:', dataStr);
+      if (!dataStr) {
+        console.log('[handleExternalDrop] No data found');
+        return;
+      }
 
       const data = JSON.parse(dataStr);
+      console.log('[handleExternalDrop] Parsed data:', data);
 
       if (data.type === 'tab') {
+        console.log('[handleExternalDrop] Processing tab drop');
         // 找到目标 Collection
         const targetCollection = allCollections.find(c => c.id === collectionId);
+        console.log('[handleExternalDrop] Target collection:', targetCollection);
 
         if (targetCollection && data.url) {
+          console.log('[handleExternalDrop] Adding card to collection');
           // 创建新卡片
           const newCard: Card = {
             id: `card-${Date.now()}`,
@@ -576,6 +649,7 @@ export default function MainContent({
             c.id === targetCollection.id ? updatedCollection : c
           );
 
+          console.log('[handleExternalDrop] Calling onCollectionsChange');
           // 使用防抖机制：200ms 后才触发存储
           if (dragTimeoutRef.current) {
             clearTimeout(dragTimeoutRef.current);
@@ -968,22 +1042,35 @@ export default function MainContent({
 
       {/* Collections 列表 - 使用纯原生 HTML5 拖拽 */}
       <div
+        id="collections-container"
         className="flex-1 overflow-y-auto p-6"
         onDragOver={(e) => {
+          console.log('[MainContent] DragOver fired');
           // 关键：允许 drop
           e.preventDefault();
           if (e.dataTransfer) {
             e.dataTransfer.dropEffect = 'move';
           }
         }}
+        onDragEnter={(e) => {
+          console.log('[MainContent] DragEnter fired');
+          e.preventDefault();
+        }}
+        onDragLeave={(e) => {
+          console.log('[MainContent] DragLeave fired');
+        }}
         onDrop={(e) => {
+          console.log('[MainContent] Drop fired on container');
           // 处理从右侧面板拖入的标签页
           e.preventDefault();
           const dataStr = e.dataTransfer?.getData('text/plain');
+          console.log('[MainContent] Drop data:', dataStr);
           if (dataStr) {
             try {
               const data = JSON.parse(dataStr);
+              console.log('[MainContent] Parsed data:', data);
               if (data.type === 'tab' && collections.length > 0) {
+                console.log('[MainContent] Adding tab to collection:', collections[0].id);
                 // 添加到第一个集合
                 handleExternalDrop(collections[0].id, e);
               } else if (data.type === 'card') {
