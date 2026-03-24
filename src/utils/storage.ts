@@ -1,28 +1,5 @@
 import { Space, Collection, Card, AppState } from '../types';
-
-const STORAGE_KEYS = {
-  SPACES: 'toby_spaces',
-  COLLECTIONS: 'toby_collections',
-  ACTIVE_SPACE: 'toby_active_space'
-};
-
-// 默认数据
-const DEFAULT_SPACE: Space = {
-  id: 'default',
-  name: '我的收藏',
-  isDefault: true,
-  createdAt: Date.now(),
-  updatedAt: Date.now()
-};
-
-const DEFAULT_COLLECTION: Collection = {
-  id: 'uncategorized',
-  spaceId: 'default',
-  name: '未分类',
-  cards: [],
-  createdAt: Date.now(),
-  updatedAt: Date.now()
-};
+import { STORAGE_KEYS, DEFAULT_SPACE, DEFAULT_COLLECTION } from '../constants/storage';
 
 // 获取所有数据
 export async function getAppState(): Promise<AppState> {

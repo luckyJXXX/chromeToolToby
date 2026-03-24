@@ -5,7 +5,6 @@ import {
   Plus,
   Star,
   Clock,
-  Bookmark,
   Settings,
   ChevronRight,
   ChevronDown,
