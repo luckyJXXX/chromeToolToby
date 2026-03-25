@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChromeWindow, ChromeTab, Collection } from '../types';
-import { closeTab } from '../utils/chrome';
+import { closeTab } from '../services/chrome';
 import {
   RefreshCw,
   X,

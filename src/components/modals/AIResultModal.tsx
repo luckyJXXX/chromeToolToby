@@ -1,5 +1,5 @@
 import { Sparkles } from 'lucide-react';
-import { AIAnalysisResult } from '../../utils/ai';
+import { AIAnalysisResult } from '../../services/ai';
 
 interface AIResultModalProps {
   isOpen: boolean;
