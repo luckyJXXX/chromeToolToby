@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Space, Collection, ChromeWindow, ChromeTab, Card } from './types';
-import { getAppState, initStorage, saveCollections } from './utils/storage';
-import { getAllWindows } from './utils/chrome';
+import { getAppState, initStorage, saveCollections } from './services/storage';
+import { getAllWindows } from './services/chrome';
 
 // 组件
 import Sidebar from './components/Sidebar';

@@ -21,7 +21,8 @@ import {
   Sparkles,
   Loader2
 } from 'lucide-react';
-import { getMiniMaxApiKey, analyzeContent, extractPageContent, AIAnalysisResult } from '../utils/ai';
+import { getMiniMaxApiKey, analyzeContent, AIAnalysisResult } from '../services/ai';
+import { extractPageContent } from '../services/chrome';
 import { AddCardModal, EditCardModal, MoveCardModal, AIResultModal } from './modals';
 
 interface MainContentProps {

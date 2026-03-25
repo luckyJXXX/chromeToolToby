@@ -1,3 +1,8 @@
+/**
+ * Storage Service - 数据持久化服务
+ * 负责与 chrome.storage.local 交互
+ */
+
 import { Space, Collection, Card, AppState } from '../types';
 import { STORAGE_KEYS, DEFAULT_SPACE, DEFAULT_COLLECTION } from '../constants/storage';
 

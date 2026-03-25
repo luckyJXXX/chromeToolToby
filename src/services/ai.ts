@@ -1,5 +1,9 @@
-// AI 功能工具函数
-// 使用 MiniMax API 进行内容分析和摘要
+/**
+ * AI Service - AI 内容分析服务
+ * 使用 MiniMax API 进行内容分析和摘要
+ */
+
+import { extractPageContent } from './chrome';
 
 export interface AIAnalysisResult {
   summary: string;        // 内容摘要
@@ -17,55 +21,6 @@ export async function getMiniMaxApiKey(): Promise<string | null> {
 // 保存 MiniMax API Key
 export async function setMiniMaxApiKey(apiKey: string): Promise<void> {
   await chrome.storage.local.set({ toby_minimax_api_key: apiKey });
-}
-
-// 提取页面正文内容
-export async function extractPageContent(tabId: number): Promise<string> {
-  try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        // 移除脚本和样式
-        const removeElements = ['script', 'style', 'noscript', 'iframe', 'nav', 'header', 'footer'];
-        const clone = document.body.cloneNode(true) as HTMLElement;
-
-        removeElements.forEach(tag => {
-          clone.querySelectorAll(tag).forEach(el => el.remove());
-        });
-
-        // 获取主要内容区域
-        const contentSelectors = [
-          'article', 'main', '.content', '#content',
-          '.post-content', '.article-content', '.entry-content'
-        ];
-
-        let content = '';
-        for (const selector of contentSelectors) {
-          const element = clone.querySelector(selector);
-          if (element) {
-            content = element.textContent || '';
-            break;
-          }
-        }
-
-        // 如果没有找到主要内容区域，获取 body 文本
-        if (!content) {
-          content = clone.textContent || '';
-        }
-
-        // 清理空白字符
-        content = content.replace(/\s+/g, ' ').trim();
-
-        // 限制内容长度（API 限制）
-        return content.substring(0, 8000);
-      }
-    });
-
-    return results[0]?.result || '';
-  } catch (error) {
-    console.error('提取页面内容失败:', error);
-    return '';
-  }
 }
 
 // 调用 MiniMax API 进行内容分析

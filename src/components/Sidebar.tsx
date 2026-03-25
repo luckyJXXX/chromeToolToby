@@ -20,7 +20,7 @@ import {
   Download,
   Upload
 } from 'lucide-react';
-import { getMiniMaxApiKey, setMiniMaxApiKey } from '../utils/ai';
+import { getMiniMaxApiKey, setMiniMaxApiKey } from '../services/ai';
 
 interface SidebarProps {
   spaces: Space[];
