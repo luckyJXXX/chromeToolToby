@@ -1,26 +1,12 @@
+/**
+ * Sidebar - 左侧边栏组件
+ * 包含搜索、快捷链接、Space 列表、设置面板
+ */
+
 import { useState, useEffect } from 'react';
 import { Space, Collection } from '../types';
-import {
-  Search,
-  Plus,
-  Star,
-  Clock,
-  Settings,
-  ChevronRight,
-  ChevronDown,
-  Layers,
-  X,
-  Key,
-  MoreVertical,
-  Trash2,
-  Folder,
-  GripVertical,
-  ExternalLink,
-  Filter,
-  Download,
-  Upload
-} from 'lucide-react';
-import { getMiniMaxApiKey, setMiniMaxApiKey } from '../services/ai';
+import { Settings as SettingsIcon } from 'lucide-react';
+import { SearchBar, QuickLinks, SpaceList, Settings } from './layout/Sidebar';
 
 interface SidebarProps {
   spaces: Space[];
@@ -31,10 +17,12 @@ interface SidebarProps {
   onSearchResults?: (results: Array<{ url: string; title: string; collectionId: string; collectionName: string; spaceName: string }>) => void;
 }
 
-interface DefaultLink {
-  id: string;
-  name: string;
-  icon: React.ReactNode;
+interface SearchResult {
+  url: string;
+  title: string;
+  collectionId: string;
+  collectionName: string;
+  spaceName: string;
 }
 
 export default function Sidebar({
@@ -46,23 +34,8 @@ export default function Sidebar({
   onSearchResults
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Array<{ url: string; title: string; collectionId: string; collectionName: string; spaceName: string }>>([]);
-  const [showAddSpace, setShowAddSpace] = useState(false);
-  const [newSpaceName, setNewSpaceName] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showSettings, setShowSettings] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-  const [savingKey, setSavingKey] = useState(false);
-  const [stats, setStats] = useState({ spaces: 0, collections: 0, cards: 0 });
-  const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set());
-  const [spaceMenuOpen, setSpaceMenuOpen] = useState<string | null>(null);
-  const [draggedSpace, setDraggedSpace] = useState<Space | null>(null);
-  const [dragOverSpace, setDragOverSpace] = useState<string | null>(null);
-
-  const defaultLinks: DefaultLink[] = [
-    { id: 'all', name: '所有链接', icon: <Layers size={18} /> },
-    { id: 'unread', name: '稍后阅读', icon: <Clock size={18} /> },
-    { id: 'favorites', name: '我的收藏', icon: <Star size={18} /> },
-  ];
 
   // 搜索功能
   useEffect(() => {
@@ -73,7 +46,7 @@ export default function Sidebar({
     }
 
     const query = searchQuery.toLowerCase();
-    const results: Array<{ url: string; title: string; collectionId: string; collectionName: string; spaceName: string }> = [];
+    const results: SearchResult[] = [];
 
     for (const collection of collections) {
       const space = spaces.find(s => s.id === collection.spaceId);
@@ -96,204 +69,38 @@ export default function Sidebar({
       }
     }
 
-    setSearchResults(results.slice(0, 20)); // 限制显示20条
+    setSearchResults(results.slice(0, 20));
     onSearchResults?.(results);
-  }, [searchQuery, collections, spaces]);
+  }, [searchQuery, collections, spaces, onSearchResults]);
 
-  // 处理默认链接点击 - 显示所有收藏的卡片
+  // 处理默认链接点击
   const handleDefaultLinkClick = (linkId: string) => {
-    // 切换到默认空间
-    if (linkId === 'all') {
-      // "所有链接" 显示所有空间的收藏
+    if (linkId === 'all' || linkId === 'favorites') {
       onSpaceChange('all');
     } else if (linkId === 'unread') {
-      // 稍后阅读 - 暂时使用 default space
       onSpaceChange('default');
-    } else if (linkId === 'favorites') {
-      // 收藏 - 显示所有收藏的卡片
-      onSpaceChange('all');
     }
   };
 
-  // 加载 API Key 和统计数据
-  useEffect(() => {
-    const loadData = async () => {
-      const key = await getMiniMaxApiKey();
-      if (key) {
-        setApiKey(key);
-      }
+  // 添加新 Space
+  const handleAddSpace = async (name: string) => {
+    const newSpace: Space = {
+      id: `space-${Date.now()}`,
+      name,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
 
-      // 加载统计数据
-      const spacesData = await chrome.storage.local.get('toby_spaces');
-      const collectionsData = await chrome.storage.local.get('toby_collections');
-      const spaces = spacesData.toby_spaces || [];
-      const collections = collectionsData.toby_collections || [];
-      const cards = collections.reduce((sum: number, c: Collection) => sum + c.cards.length, 0);
-
-      setStats({
-        spaces: spaces.length,
-        collections: collections.length,
-        cards
+    const currentSpaces = await new Promise<Space[]>((resolve) => {
+      chrome.storage.local.get('toby_spaces', (result) => {
+        resolve(result.toby_spaces || []);
       });
-    };
-    if (showSettings) {
-      loadData();
-    }
-  }, [showSettings]);
-
-  // 保存 API Key
-  const handleSaveApiKey = async () => {
-    if (!apiKey.trim()) return;
-    setSavingKey(true);
-    try {
-      await setMiniMaxApiKey(apiKey.trim());
-      setShowSettings(false);
-    } catch (error) {
-      console.error('保存 API Key 失败:', error);
-    }
-    setSavingKey(false);
-  };
-
-  // 导出数据
-  const handleExportData = async (format: 'json' | 'csv') => {
-    const spacesData = await chrome.storage.local.get('toby_spaces');
-    const collectionsData = await chrome.storage.local.get('toby_collections');
-
-    const data = {
-      spaces: spacesData.toby_spaces || [],
-      collections: collectionsData.toby_collections || [],
-      exportedAt: new Date().toISOString(),
-      version: '1.0'
-    };
-
-    let blob: Blob;
-    let filename: string;
-    const timestamp = new Date().toISOString().slice(0, 10);
-
-    if (format === 'json') {
-      blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      filename = `toby-backup-${timestamp}.json`;
-    } else {
-      // CSV format - flatten cards
-      const rows = ['title,url,description,collection,space,createdAt'];
-      for (const collection of data.collections) {
-        const space = data.spaces.find((s: Space) => s.id === collection.spaceId);
-        const spaceName = space?.name || '默认空间';
-        for (const card of collection.cards) {
-          const title = (card.title || '').replace(/"/g, '""');
-          const description = (card.description || '').replace(/"/g, '""');
-          rows.push(`"${title}","${card.url}","${description}","${collection.name}","${spaceName}","${card.createdAt}"`);
-        }
-      }
-      blob = new Blob([rows.join('\n')], { type: 'text/csv' });
-      filename = `toby-backup-${timestamp}.csv`;
-    }
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // 导入数据
-  const handleImportData = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-
-        if (data.spaces) {
-          await chrome.storage.local.set({ toby_spaces: data.spaces });
-        }
-        if (data.collections) {
-          await chrome.storage.local.set({ toby_collections: data.collections });
-        }
-
-        window.location.reload();
-      } catch (error) {
-        console.error('导入失败:', error);
-        alert('导入失败，请检查文件格式');
-      }
-    };
-    input.click();
-  };
-
-  // 切换 Space 展开/折叠
-  const toggleSpaceExpand = (spaceId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedSpaces(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(spaceId)) {
-        newSet.delete(spaceId);
-      } else {
-        newSet.add(spaceId);
-      }
-      return newSet;
     });
-  };
 
-  // 切换 Space 菜单
-  const toggleSpaceMenu = (spaceId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSpaceMenuOpen(prev => prev === spaceId ? null : spaceId);
-  };
-
-  // Space 拖拽排序
-  const handleDragStart = (e: React.DragEvent, space: Space) => {
-    setDraggedSpace(space);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', space.id);
-  };
-
-  const handleDragOver = (e: React.DragEvent, spaceId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverSpace(spaceId);
-  };
-
-  const handleDragLeave = () => {
-    setDragOverSpace(null);
-  };
-
-  const handleDrop = (e: React.DragEvent, targetSpace: Space) => {
-    e.preventDefault();
-    if (!draggedSpace || draggedSpace.id === targetSpace.id) {
-      setDraggedSpace(null);
-      setDragOverSpace(null);
-      return;
-    }
-
-    const draggedIndex = spaces.findIndex(s => s.id === draggedSpace.id);
-    const targetIndex = spaces.findIndex(s => s.id === targetSpace.id);
-
-    if (draggedIndex === -1 || targetIndex === -1) {
-      setDraggedSpace(null);
-      setDragOverSpace(null);
-      return;
-    }
-
-    const newSpaces = [...spaces];
-    newSpaces.splice(draggedIndex, 1);
-    newSpaces.splice(targetIndex, 0, draggedSpace);
-
-    chrome.storage.local.set({ toby_spaces: newSpaces });
-    onSpacesChange?.(newSpaces);
-
-    setDraggedSpace(null);
-    setDragOverSpace(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedSpace(null);
-    setDragOverSpace(null);
+    const updatedSpaces = [...currentSpaces, newSpace];
+    await chrome.storage.local.set({ toby_spaces: updatedSpaces });
+    onSpacesChange?.(updatedSpaces);
+    window.location.reload();
   };
 
   // 删除 Space
@@ -307,353 +114,47 @@ export default function Sidebar({
     const collections = (collectionsData.toby_collections || []).filter((c: Collection) => c.spaceId !== spaceId);
     await chrome.storage.local.set({ toby_collections: collections });
 
-    setSpaceMenuOpen(null);
     window.location.reload();
-  };
-
-  // 添加新 Space
-  const handleAddSpace = async () => {
-    if (newSpaceName.trim()) {
-      const newSpace: Space = {
-        id: `space-${Date.now()}`,
-        name: newSpaceName.trim(),
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
-
-      // 保存到存储
-      const currentSpaces = await getSpaces();
-      const updatedSpaces = [...currentSpaces, newSpace];
-      await chrome.storage.local.set({ toby_spaces: updatedSpaces });
-
-      setNewSpaceName('');
-      setShowAddSpace(false);
-
-      // 触发刷新
-      window.location.reload();
-    }
-  };
-
-  // 获取当前 spaces
-  const getSpaces = (): Promise<Space[]> => {
-    return new Promise((resolve) => {
-      chrome.storage.local.get('toby_spaces', (result) => {
-        resolve(result.toby_spaces || []);
-      });
-    });
   };
 
   return (
     <aside className="w-64 h-full bg-dark-900 border-r border-dark-800 flex flex-col">
-      {/* 顶部搜索框 */}
-      <div className="p-4 border-b border-dark-800">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-500" size={16} />
-          <input
-            type="text"
-            placeholder="搜索收藏..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-dark-800 border border-dark-700 rounded-lg pl-10 pr-4 py-2 text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500"
-          />
-        </div>
-        {/* 搜索结果 */}
-        {searchResults.length > 0 && (
-          <div className="mt-2 max-h-64 overflow-y-auto bg-dark-800 border border-dark-700 rounded-lg">
-            <div className="px-3 py-2 text-xs text-dark-500 border-b border-dark-700 flex items-center gap-1">
-              <Filter size={12} />
-              找到 {searchResults.length} 个结果
-            </div>
-            {searchResults.map((result, index) => (
-              <button
-                key={index}
-                onClick={() => {
-                  chrome.tabs.create({ url: result.url });
-                  setSearchQuery('');
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-dark-700 border-b border-dark-700 last:border-0"
-              >
-                <ExternalLink size={12} className="text-dark-500 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-dark-300 truncate">{result.title}</div>
-                  <div className="text-xs text-dark-500 truncate">{result.spaceName} / {result.collectionName}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      {/* 搜索栏 */}
+      <SearchBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchResults={searchResults}
+      />
 
-      {/* 默认快捷链接 */}
-      <nav className="p-2 border-b border-dark-800">
-        {defaultLinks.map((link) => (
-          <button
-            key={link.id}
-            onClick={() => handleDefaultLinkClick(link.id)}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-dark-300 hover:bg-dark-800 hover:text-dark-100 transition-colors"
-          >
-            {link.icon}
-            <span className="text-sm">{link.name}</span>
-          </button>
-        ))}
-      </nav>
+      {/* 快捷链接 */}
+      <QuickLinks onLinkClick={handleDefaultLinkClick} />
 
-      {/* Spaces 列表 */}
-      <div className="flex-1 overflow-y-auto p-2">
-        <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-xs font-medium text-dark-500 uppercase">Spaces</span>
-          <button
-            onClick={() => setShowAddSpace(!showAddSpace)}
-            className="p-1 hover:bg-dark-800 rounded text-dark-500 hover:text-dark-300"
-          >
-            <Plus size={14} />
-          </button>
-        </div>
+      {/* Space 列表 */}
+      <SpaceList
+        spaces={spaces}
+        collections={collections}
+        activeSpaceId={activeSpaceId}
+        onSpaceChange={onSpaceChange}
+        onAddSpace={handleAddSpace}
+        onDeleteSpace={handleDeleteSpace}
+      />
 
-        {/* 添加 Space 输入框 */}
-        {showAddSpace && (
-          <div className="px-3 py-2 mb-2">
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                placeholder="输入 Space 名称"
-                value={newSpaceName}
-                onChange={(e) => setNewSpaceName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddSpace()}
-                className="flex-1 bg-dark-800 border border-dark-700 rounded px-3 py-1.5 text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500"
-                autoFocus
-              />
-              <button
-                onClick={() => setShowAddSpace(false)}
-                className="p-1.5 text-dark-500 hover:text-dark-300"
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <button
-              onClick={handleAddSpace}
-              className="w-full mt-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-sm"
-            >
-              创建 Space
-            </button>
-          </div>
-        )}
-
-        {/* Space 列表 */}
-        {spaces.map((space) => {
-          const collectionCount = collections.filter(c => c.spaceId === space.id).length;
-          const isExpanded = expandedSpaces.has(space.id);
-          const isDragOver = dragOverSpace === space.id && draggedSpace?.id !== space.id;
-
-          return (
-            <div
-              key={space.id}
-              className={`relative ${isDragOver ? 'border-t-2 border-indigo-500' : ''}`}
-              onDragOver={(e) => handleDragOver(e, space.id)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, space)}
-            >
-              <div
-                draggable
-                onDragStart={(e) => handleDragStart(e, space)}
-                onDragEnd={handleDragEnd}
-                onClick={() => onSpaceChange(space.id)}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors cursor-grab active:cursor-grabbing ${
-                  draggedSpace?.id === space.id ? 'opacity-50' : ''
-                } ${
-                  activeSpaceId === space.id
-                    ? 'bg-indigo-600/20 text-indigo-400'
-                    : 'text-dark-300 hover:bg-dark-800 hover:text-dark-100'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <GripVertical size={14} className="text-dark-600 flex-shrink-0" />
-                  <div className="w-6 h-6 rounded bg-dark-800 flex items-center justify-center text-xs font-medium">
-                    {space.name.charAt(0)}
-                  </div>
-                  <span className="text-sm truncate">{space.name}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-dark-500">{collectionCount}</span>
-                  <button
-                    onClick={(e) => toggleSpaceExpand(space.id, e)}
-                    className="p-1 hover:bg-dark-700 rounded"
-                  >
-                    {isExpanded ? (
-                      <ChevronDown size={14} className="text-dark-500" />
-                    ) : (
-                      <ChevronRight size={14} className="text-dark-500" />
-                    )}
-                  </button>
-                  <button
-                    onClick={(e) => toggleSpaceMenu(space.id, e)}
-                    className="p-1 hover:bg-dark-700 rounded"
-                  >
-                    <MoreVertical size={14} className="text-dark-500" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Space 操作菜单 */}
-              {spaceMenuOpen === space.id && !space.isDefault && (
-                <div className="absolute right-0 top-full mt-1 bg-dark-800 border border-dark-700 rounded-lg shadow-lg py-1 z-10 min-w-[120px]">
-                  <button
-                    onClick={() => handleDeleteSpace(space.id)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-dark-700 text-left"
-                  >
-                    <Trash2 size={14} />
-                    删除 Space
-                  </button>
-                </div>
-              )}
-
-              {/* 展开的 Collections 列表 */}
-              {isExpanded && (
-                <div className="ml-4 mt-1 space-y-1">
-                  {collections.filter(c => c.spaceId === space.id).map(collection => (
-                    <button
-                      key={collection.id}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-dark-400 hover:bg-dark-800 rounded-lg text-left"
-                    >
-                      <Folder size={12} />
-                      {collection.name}
-                      <span className="ml-auto text-dark-500">{collection.cards.length}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 底部：设置 */}
+      {/* 底部设置按钮 */}
       <div className="p-2 border-t border-dark-800">
         <button
           onClick={() => setShowSettings(true)}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-dark-400 hover:bg-dark-800 hover:text-dark-100 transition-colors"
         >
-          <Settings size={18} />
+          <SettingsIcon size={18} />
           <span className="text-sm">设置</span>
         </button>
       </div>
 
-      {/* 设置弹窗 */}
-      {showSettings && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-dark-800 rounded-xl p-6 w-[420px] border border-dark-700">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Settings size={20} className="text-indigo-400" />
-                <h3 className="text-lg font-medium text-dark-100">设置</h3>
-              </div>
-              <button
-                onClick={() => setShowSettings(false)}
-                className="text-dark-500 hover:text-dark-300"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* API Key 设置 */}
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Key size={16} className="text-indigo-400" />
-                <span className="text-sm font-medium text-dark-300">MiniMax API Key</span>
-              </div>
-              <p className="text-xs text-dark-500 mb-2">
-                输入您的 MiniMax API Key 以启用 AI 分析功能。
-              </p>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-xxxxxxxxxxxxxxxx"
-                className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-dark-100 placeholder-dark-500 focus:outline-none focus:border-indigo-500 mb-3"
-              />
-              <button
-                onClick={handleSaveApiKey}
-                disabled={savingKey || !apiKey.trim()}
-                className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-dark-600 disabled:text-dark-500 text-white rounded-lg text-sm"
-              >
-                {savingKey ? '保存中...' : '保存 API Key'}
-              </button>
-            </div>
-
-            {/* 统计信息 */}
-            <div className="mb-4 pt-4 border-t border-dark-700">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm font-medium text-dark-300">数据统计</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="bg-dark-700 rounded-lg p-3 text-center">
-                  <div className="text-xl font-bold text-indigo-400">{stats.spaces}</div>
-                  <div className="text-xs text-dark-500">Spaces</div>
-                </div>
-                <div className="bg-dark-700 rounded-lg p-3 text-center">
-                  <div className="text-xl font-bold text-indigo-400">{stats.collections}</div>
-                  <div className="text-xs text-dark-500">Collections</div>
-                </div>
-                <div className="bg-dark-700 rounded-lg p-3 text-center">
-                  <div className="text-xl font-bold text-indigo-400">{stats.cards}</div>
-                  <div className="text-xs text-dark-500">Cards</div>
-                </div>
-              </div>
-            </div>
-
-            {/* 数据导出/导入 */}
-            <div className="mb-4 pt-4 border-t border-dark-700">
-              <div className="flex items-center gap-2 mb-2">
-                <Download size={16} className="text-indigo-400" />
-                <span className="text-sm font-medium text-dark-300">数据备份</span>
-              </div>
-              <p className="text-xs text-dark-500 mb-3">
-                导出您的收藏数据为 JSON 或 CSV 格式，也可以从备份文件导入。
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleExportData('json')}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm"
-                >
-                  <Download size={14} />
-                  导出 JSON
-                </button>
-                <button
-                  onClick={() => handleExportData('csv')}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm"
-                >
-                  <Download size={14} />
-                  导出 CSV
-                </button>
-                <button
-                  onClick={handleImportData}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm"
-                >
-                  <Upload size={14} />
-                  导入
-                </button>
-              </div>
-            </div>
-
-            {/* 快捷键提示 */}
-            <div className="pt-4 border-t border-dark-700">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm font-medium text-dark-300">快捷键</span>
-              </div>
-              <div className="space-y-1 text-xs text-dark-500">
-                <div className="flex justify-between">
-                  <span>切换侧边栏</span>
-                  <kbd className="px-1.5 py-0.5 bg-dark-700 rounded text-dark-400">Ctrl+B</kbd>
-                </div>
-                <div className="flex justify-between">
-                  <span>关闭弹窗</span>
-                  <kbd className="px-1.5 py-0.5 bg-dark-700 rounded text-dark-400">Esc</kbd>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 设置面板 */}
+      <Settings
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </aside>
   );
 }
