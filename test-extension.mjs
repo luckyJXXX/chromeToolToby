@@ -54,6 +54,7 @@ async function runTests() {
   console.log('-'.repeat(50));
   try {
     const mainContent = readFileSync(join(PROJECT_ROOT, 'src/components/MainContent.tsx'), 'utf-8');
+    const collection = readFileSync(join(PROJECT_ROOT, 'src/components/layout/MainContent/Collection.tsx'), 'utf-8');
 
     // Check for native drag handlers (not dnd-kit)
     const dragTests = [
@@ -76,7 +77,8 @@ async function runTests() {
           failed++;
         }
       } else {
-        if (mainContent.includes(test.pattern)) {
+        // Check both mainContent and Collection component
+        if (mainContent.includes(test.pattern) || collection.includes(test.pattern)) {
           console.log(`  ✓ ${test.name}`);
           passed++;
         } else {
@@ -96,16 +98,17 @@ async function runTests() {
   console.log('-'.repeat(50));
   try {
     const rightPanel = readFileSync(join(PROJECT_ROOT, 'src/components/RightPanel.tsx'), 'utf-8');
+    const tabItem = readFileSync(join(PROJECT_ROOT, 'src/components/layout/RightPanel/TabItem.tsx'), 'utf-8');
 
     const tests = [
-      { name: 'DraggableTab component', pattern: 'DraggableTab' },
+      { name: 'DraggableTab component', pattern: 'function TabItem' },
       { name: 'onDragStart handler', pattern: 'onDragStart' },
       { name: 'dataTransfer.setData for tab', pattern: "type: 'tab'" },
       { name: 'effectAllowed = move', pattern: "effectAllowed = 'move'" },
     ];
 
     for (const test of tests) {
-      if (rightPanel.includes(test.pattern)) {
+      if (rightPanel.includes(test.pattern) || tabItem.includes(test.pattern)) {
         console.log(`  ✓ ${test.name}`);
         passed++;
       } else {
@@ -152,16 +155,17 @@ async function runTests() {
   console.log('-'.repeat(50));
   try {
     const mainContent = readFileSync(join(PROJECT_ROOT, 'src/components/MainContent.tsx'), 'utf-8');
-    const rightPanel = readFileSync(join(PROJECT_ROOT, 'src/components/RightPanel.tsx'), 'utf-8');
+    const collection = readFileSync(join(PROJECT_ROOT, 'src/components/layout/MainContent/Collection.tsx'), 'utf-8');
+    const tabItem = readFileSync(join(PROJECT_ROOT, 'src/components/layout/RightPanel/TabItem.tsx'), 'utf-8');
 
     // Verify the complete flow
     const flowSteps = [
       // Step 1: RightPanel starts drag
-      { name: '1. RightPanel sets tab data in dataTransfer', pattern: "JSON.stringify", source: rightPanel },
+      { name: '1. RightPanel sets tab data in dataTransfer', pattern: "JSON.stringify", source: tabItem },
 
       // Step 2: MainContent handles native drag
-      { name: '2. SortableCollection has onDragOver', pattern: 'onDragOver={handleNativeDragOver}', source: mainContent },
-      { name: '3. SortableCollection has onDrop', pattern: 'onDrop={handleNativeDrop}', source: mainContent },
+      { name: '2. SortableCollection has onDragOver', pattern: 'onDragOver={handleNativeDragOver}', source: collection },
+      { name: '3. SortableCollection has onDrop', pattern: 'onDrop={handleNativeDrop}', source: collection },
 
       // Step 3: handleExternalDrop processes the drop
       { name: '4. handleExternalDrop function exists', pattern: 'const handleExternalDrop = useCallback', source: mainContent },
@@ -278,6 +282,7 @@ async function runTests() {
   console.log('-'.repeat(50));
   try {
     const rightPanel = readFileSync(join(PROJECT_ROOT, 'src/components/RightPanel.tsx'), 'utf-8');
+    const tabItem = readFileSync(join(PROJECT_ROOT, 'src/components/layout/RightPanel/TabItem.tsx'), 'utf-8');
 
     const tests = [
       { name: 'Sets tab data with type', pattern: "type: 'tab'" },
@@ -290,7 +295,7 @@ async function runTests() {
     ];
 
     for (const test of tests) {
-      if (rightPanel.includes(test.pattern)) {
+      if (rightPanel.includes(test.pattern) || tabItem.includes(test.pattern)) {
         console.log(`  ✓ ${test.name}`);
         passed++;
       } else {
@@ -310,12 +315,13 @@ async function runTests() {
   try {
     const mainContent = readFileSync(join(PROJECT_ROOT, 'src/components/MainContent.tsx'), 'utf-8');
     const sidebar = readFileSync(join(PROJECT_ROOT, 'src/components/Sidebar.tsx'), 'utf-8');
+    const settings = readFileSync(join(PROJECT_ROOT, 'src/components/layout/Sidebar/Settings.tsx'), 'utf-8');
 
     const tests = [
       { name: 'Three view modes', pattern: "'grid' | 'list' | 'compact'", source: mainContent },
       { name: 'Space management', pattern: 'handleAddSpace', source: sidebar },
-      { name: 'Data export', pattern: 'handleExportData', source: sidebar },
-      { name: 'Statistics', pattern: '数据统计', source: sidebar },
+      { name: 'Data export', pattern: 'handleExportData', source: settings },
+      { name: 'Statistics', pattern: '数据统计', source: settings },
       { name: 'Search', pattern: 'searchQuery', source: sidebar },
     ];
 
