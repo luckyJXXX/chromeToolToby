@@ -2,6 +2,7 @@ import { ChromeTab, ChromeWindow } from '../types';
 
 // 获取所有窗口和标签页
 export async function getAllWindows(): Promise<ChromeWindow[]> {
+  const extensionId = chrome.runtime.id;
   return new Promise((resolve) => {
     chrome.windows.getAll({ populate: true }, (windows) => {
       const result: ChromeWindow[] = windows
@@ -11,15 +12,22 @@ export async function getAllWindows(): Promise<ChromeWindow[]> {
           focused: w.focused,
           incognito: w.incognito,
           type: w.type as 'normal' | 'popup' | 'devtools',
-          tabs: (w.tabs || []).map(t => ({
-            id: t.id!,
-            windowId: w.id!,
-            title: t.title || '无标题',
-            url: t.url || '',
-            favIconUrl: t.favIconUrl,
-            pinned: t.pinned,
-            active: t.active
-          }))
+          tabs: (w.tabs || [])
+            .filter(t => {
+              // 排除扩展自己的页面和新标签页
+              if (t.url?.startsWith(`chrome-extension://${extensionId}`)) return false;
+              if (t.url === 'about:newtab' || t.url === 'chrome://newtab/') return false;
+              return true;
+            })
+            .map(t => ({
+              id: t.id!,
+              windowId: w.id!,
+              title: t.title || '无标题',
+              url: t.url || '',
+              favIconUrl: t.favIconUrl,
+              pinned: t.pinned,
+              active: t.active
+            }))
         }));
       resolve(result);
     });
